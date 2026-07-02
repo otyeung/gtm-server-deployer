@@ -691,6 +691,96 @@ describe("createDeploymentEngine", () => {
     await expect(planPromise).resolves.toMatchObject({ phase: "planned", activeOperation: null });
   });
 
+  it("reports a live plan lock as planning even when persisted state is inactive", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const initStarted = createDeferred();
+    const releaseInit = createDeferred();
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        if (options.command === "init") {
+          initStarted.resolve();
+          await releaseInit.promise;
+        }
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          logCallbackErrors: []
+        };
+      },
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    const planPromise = engine.plan(input);
+    await initStarted.promise;
+    const activeLockTarget = await readlink(paths.operationLockDir);
+    releaseInit.resolve();
+    await expect(planPromise).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+
+    await mkdir(paths.workspaceDir, { recursive: true });
+    await symlink(activeLockTarget, paths.operationLockDir);
+
+    await expect(engine.getStatus()).resolves.toMatchObject({
+      phase: "planning",
+      activeOperation: "plan",
+      error: null
+    });
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+      error: null
+    });
+  });
+
+  it("removes a stale lock when persisted state is inactive before reporting status", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const engine = createDeploymentEngine({
+      paths,
+      runner: vi.fn(),
+      terraformModuleDir
+    });
+
+    await writeDeploymentState(paths, {
+      phase: "planned",
+      activeOperation: null,
+      projectId: input.projectId,
+      region: input.region,
+      startedAt: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:01:00.000Z",
+      lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
+      error: null
+    });
+    await mkdir(paths.workspaceDir, { recursive: true });
+    await symlink(
+      encodeLockTarget({
+        operation: "plan",
+        pid: 999999,
+        ownerId: randomUUID(),
+        processStartedAt: "2026-07-02T00:00:00.000Z",
+        acquiredAt: "2026-07-02T00:01:00.000Z"
+      }),
+      paths.operationLockDir,
+    );
+
+    await expect(engine.getStatus()).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+      error: null
+    });
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+      error: null
+    });
+    await expect(readlink(paths.operationLockDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("recovers stale persisted active operation state when reading status without a live lock", async () => {
     const paths = getWorkspacePaths(rootDir);
     const engine = createDeploymentEngine({

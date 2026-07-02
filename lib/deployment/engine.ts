@@ -186,6 +186,17 @@ function getFallbackOperationForState(state: DeploymentState): DeploymentOperati
   }
 }
 
+function getActivePhaseForOperation(operation: DeploymentOperation): DeploymentState["phase"] {
+  switch (operation) {
+    case "plan":
+      return "planning";
+    case "apply":
+      return "applying";
+    case "destroy":
+      return "destroying";
+  }
+}
+
 async function copyTerraformModule(sourceDir: string, targetDir: string): Promise<void> {
   await rm(targetDir, { force: true, recursive: true });
   await cp(sourceDir, targetDir, { recursive: true, force: true });
@@ -347,20 +358,31 @@ async function recoverPersistedActiveOperation(
 }
 
 async function recoverStatusState(paths: WorkspacePaths, state: DeploymentState): Promise<DeploymentState> {
-  if (!(state.activeOperation || ACTIVE_PHASES.has(state.phase))) {
-    return state;
-  }
-
   const fallbackOperation = getFallbackOperationForState(state);
   const lockStatus = await inspectOperationLock(paths, fallbackOperation);
 
   if (lockStatus.kind === "active") {
-    return state;
+    if (state.activeOperation || ACTIVE_PHASES.has(state.phase)) {
+      return state;
+    }
+
+    return {
+      ...state,
+      phase: getActivePhaseForOperation(lockStatus.operation),
+      activeOperation: lockStatus.operation,
+      startedAt: state.startedAt ?? lockStatus.metadata?.acquiredAt ?? null,
+      updatedAt: lockStatus.metadata?.acquiredAt ?? state.updatedAt,
+      error: null
+    };
   }
 
   if (lockStatus.kind === "recoverable") {
     await recoverStaleOperationLock(paths, fallbackOperation, lockStatus.staleReason, lockStatus.metadata);
     return readDeploymentState(paths);
+  }
+
+  if (!(state.activeOperation || ACTIVE_PHASES.has(state.phase))) {
+    return state;
   }
 
   return recoverPersistedActiveOperation(paths, fallbackOperation);

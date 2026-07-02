@@ -17,6 +17,7 @@ import {
   clearTerraformOutputs,
   ensureWorkspace,
   readDeploymentLog,
+  readPersistedSensitiveValues,
   readDeploymentState,
   readTerraformOutputs,
   writeDeploymentState,
@@ -355,13 +356,22 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
   const terraformModuleDir = options.terraformModuleDir ?? path.join(process.cwd(), "terraform", "gcp");
   let sensitiveValues: string[] = [];
 
+  async function getSensitiveValues(): Promise<readonly string[]> {
+    if (sensitiveValues.length === 0) {
+      sensitiveValues = await readPersistedSensitiveValues(paths);
+    }
+
+    return sensitiveValues;
+  }
+
   async function run(command: TerraformCommandOptions["command"], args: readonly string[]) {
+    const effectiveSensitiveValues = await getSensitiveValues();
     return runner({
       binaryPath: settings.terraformPath,
       command,
       args,
       cwd: paths.gcpWorkdir,
-      sensitiveValues,
+      sensitiveValues: effectiveSensitiveValues,
       onLog: (chunk) => appendDeploymentLog(paths, chunk)
     });
   }
@@ -483,8 +493,8 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       return readDeploymentState(paths);
     },
 
-    getLogs() {
-      return readDeploymentLog(paths, sensitiveValues);
+    async getLogs() {
+      return readDeploymentLog(paths, await getSensitiveValues());
     },
 
     getOutputs() {

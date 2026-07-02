@@ -106,6 +106,58 @@ describe("createDeploymentEngine", () => {
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan", "apply", "output"]);
   });
 
+  it("rehydrates sensitive values for apply after process restart", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const planningRunner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const planningEngine = createDeploymentEngine({
+      paths,
+      runner: planningRunner,
+      terraformModuleDir
+    });
+
+    await planningEngine.plan(input);
+
+    const restartedRunner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        const emittedValue = options.sensitiveValues.includes(input.gtmContainerConfig) ? "[REDACTED]" : input.gtmContainerConfig;
+        await options.onLog?.(`${options.command}:${emittedValue}`);
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: options.command === "output" ? "{}" : "",
+          stderr: "",
+          logCallbackErrors: []
+        };
+      },
+    );
+    const restartedEngine = createDeploymentEngine({
+      paths,
+      runner: restartedRunner,
+      terraformModuleDir
+    });
+
+    const state = await restartedEngine.apply();
+    const logs = await restartedEngine.getLogs();
+
+    expect(state.phase).toBe("applied");
+    expect(restartedRunner.mock.calls.find(([call]) => call.command === "apply")?.[0].sensitiveValues).toEqual([
+      input.gtmContainerConfig
+    ]);
+    expect(JSON.stringify(state)).not.toContain(input.gtmContainerConfig);
+    expect(JSON.stringify(await readDeploymentState(paths))).not.toContain(input.gtmContainerConfig);
+    expect(logs).toContain("[REDACTED]");
+    expect(logs).not.toContain(input.gtmContainerConfig);
+  });
+
   it("rejects a concurrent plan while another plan is running", async () => {
     const initStarted = createDeferred();
     const releaseInit = createDeferred();
@@ -423,5 +475,35 @@ describe("createDeploymentEngine", () => {
 
     expect(state.phase).toBe("destroyed");
     expect(await engine.getOutputs()).toEqual({});
+  });
+
+  it("redacts persisted secrets from logs after process restart", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const planningRunner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const planningEngine = createDeploymentEngine({
+      paths,
+      runner: planningRunner,
+      terraformModuleDir
+    });
+
+    await planningEngine.plan(input);
+    await writeFile(paths.logFile, `terraform:${input.gtmContainerConfig}\n`, "utf8");
+
+    const restartedEngine = createDeploymentEngine({
+      paths,
+      runner: vi.fn(),
+      terraformModuleDir
+    });
+
+    await expect(restartedEngine.getLogs()).resolves.toContain("[REDACTED]");
+    await expect(restartedEngine.getLogs()).resolves.not.toContain(input.gtmContainerConfig);
   });
 });

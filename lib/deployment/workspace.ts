@@ -66,6 +66,13 @@ export async function readDeploymentLog(
   }
 }
 
+export async function readPersistedSensitiveValues(paths: WorkspacePaths): Promise<string[]> {
+  const tfvars = await readJson<{ gtm_container_config?: string }>(paths.tfvarsFile, {});
+  return typeof tfvars.gtm_container_config === "string" && tfvars.gtm_container_config.length > 0
+    ? [tfvars.gtm_container_config]
+    : [];
+}
+
 export async function writeTerraformVars(
   paths: WorkspacePaths,
   input: DeploymentInput,

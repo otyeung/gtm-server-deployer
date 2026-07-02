@@ -310,7 +310,7 @@ describe("createDeploymentEngine", () => {
     await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
   });
 
-  it("does not recover a live lock only because its timestamp is old", async () => {
+  it("recovers a legacy lock with the current pid even if its timestamp is old", async () => {
     const paths = getWorkspacePaths(rootDir);
     const runner = vi.fn(
       async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
@@ -334,10 +334,8 @@ describe("createDeploymentEngine", () => {
       "utf8",
     );
 
-    await expect(engine.plan(input)).rejects.toMatchObject({
-      message: expect.stringContaining("Another deployment operation is already running: plan")
-    });
-    expect(runner).not.toHaveBeenCalled();
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
   });
 
   it("recovers a dead lock owner and allows planning to proceed", async () => {
@@ -527,6 +525,35 @@ describe("createDeploymentEngine", () => {
       message: expect.stringContaining("Another deployment operation is already running: plan")
     });
     expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("recovers a legacy lock with the current pid when owner identity metadata is missing", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await mkdir(paths.operationLockDir, { recursive: true });
+    await writeFile(
+      path.join(paths.operationLockDir, "metadata.json"),
+      `${JSON.stringify({ operation: "plan", pid: process.pid, acquiredAt: "2026-07-02T00:01:00.000Z" }, null, 2)}\n`,
+      "utf8",
+    );
+
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
   });
 
   it("recovers a persisted active operation when no live lock remains", async () => {

@@ -208,6 +208,10 @@ function parseOperationLockTarget(target: string): OperationLockMetadata | null 
 
 function getLockStaleReason(metadata: OperationLockMetadata): string | null {
   if (metadata.pid === process.pid) {
+    if (metadata.ownerId === null || metadata.processStartedAt === null) {
+      return "legacy lock is missing owner identity metadata";
+    }
+
     if (metadata.ownerId !== null && metadata.ownerId !== PROCESS_LOCK_OWNER_ID) {
       return "lock owner identity does not match current process";
     }

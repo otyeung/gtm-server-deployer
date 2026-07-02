@@ -18,6 +18,8 @@ locals {
   ])
   custom_domain_enabled    = var.custom_domain != ""
   normalized_custom_domain = lower(var.custom_domain)
+  cloud_dns_zone_name_raw  = replace("${local.name_prefix}-${local.normalized_custom_domain}", ".", "-")
+  cloud_dns_zone_name      = length(local.cloud_dns_zone_name_raw) <= 63 ? local.cloud_dns_zone_name_raw : "${substr(local.cloud_dns_zone_name_raw, 0, 54)}-${substr(sha1(local.normalized_custom_domain), 0, 8)}"
   preview_url_env          = var.enable_preview_server ? google_cloud_run_v2_service.preview[0].uri : ""
 }
 
@@ -274,7 +276,7 @@ resource "google_compute_global_forwarding_rule" "https" {
 resource "google_dns_managed_zone" "domain" {
   count       = local.custom_domain_enabled && var.enable_cloud_dns ? 1 : 0
   project     = var.project_id
-  name        = replace("${local.name_prefix}-${local.normalized_custom_domain}", ".", "-")
+  name        = local.cloud_dns_zone_name
   dns_name    = "${local.normalized_custom_domain}."
   description = "Managed zone for GTM Server custom domain"
   labels      = local.labels

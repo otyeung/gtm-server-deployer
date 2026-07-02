@@ -85,3 +85,29 @@ run "normalizes_custom_domain_derived_values" {
     error_message = "Expected HTTPS output URL to use lowercase custom_domain."
   }
 }
+
+run "accepts_long_custom_domain_with_bounded_cloud_dns_zone_name" {
+  command = plan
+
+  variables {
+    project_id           = "abcde-12345"
+    gtm_container_config = "dummy-config"
+    custom_domain        = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com"
+    enable_cloud_dns     = true
+  }
+
+  assert {
+    condition     = length(google_dns_managed_zone.domain[0].name) <= 63
+    error_message = "Expected Cloud DNS managed zone name to stay within 63 characters."
+  }
+
+  assert {
+    condition     = google_dns_managed_zone.domain[0].dns_name == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com."
+    error_message = "Expected Cloud DNS managed zone DNS name to preserve the full normalized custom domain."
+  }
+
+  assert {
+    condition     = google_dns_record_set.domain_a[0].name == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com."
+    error_message = "Expected Cloud DNS record names to preserve the full normalized custom domain."
+  }
+}

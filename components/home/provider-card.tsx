@@ -18,6 +18,8 @@ export function ProviderCard({
   name,
   status
 }: ProviderCardProps) {
+  const ctaLabel = href.startsWith("#") ? "View roadmap" : "Open provider workspace";
+
   return (
     <Link href={href} className="group block">
       <Card
@@ -43,7 +45,7 @@ export function ProviderCard({
             featured ? "border-slate-800 text-slate-100" : "border-slate-200 text-slate-900",
           )}
         >
-          <span>Open provider workspace</span>
+          <span>{ctaLabel}</span>
           <span aria-hidden="true" className="transition group-hover:translate-x-1">
             →
           </span>

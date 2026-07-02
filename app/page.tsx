@@ -32,6 +32,15 @@ const providers = [
 ];
 
 export default function HomePage() {
+  const roadmapItems = [
+    "Working AWS deployment",
+    "Working Azure deployment",
+    "Generic Terraform template export",
+    "Google Cloud Shell launch button",
+    "Multi-region deployment",
+    "GitHub Actions CI/CD"
+  ];
+
   return (
     <main className="relative overflow-hidden">
       <div className="absolute inset-x-0 top-0 -z-10 h-[34rem] bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.2),transparent_52%),linear-gradient(180deg,#0f172a_0%,#e2e8f0_68%,#f8fafc_100%)]" />
@@ -83,6 +92,40 @@ export default function HomePage() {
           {providers.map((provider) => (
             <ProviderCard key={provider.name} {...provider} />
           ))}
+        </section>
+
+        <section
+          id="roadmap"
+          aria-labelledby="roadmap-heading"
+          className="rounded-[2rem] border border-slate-200/80 bg-white/90 p-6 shadow-[0_22px_50px_-30px_rgba(15,23,42,0.25)] backdrop-blur sm:p-8"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-2">
+              <Badge>Roadmap</Badge>
+              <h2 id="roadmap-heading" className="text-2xl font-semibold tracking-tight text-slate-950">
+                Planned providers and next steps
+              </h2>
+              <p className="max-w-3xl text-sm leading-6 text-slate-600">
+                The GCP MVP is ready in the local control plane today. AWS, Azure, and generic Terraform
+                flows stay visible so the future provider contract is easy to understand before those
+                implementations land.
+              </p>
+            </div>
+            <Link href="/deploy" className="text-sm font-semibold text-blue-700 transition hover:text-blue-600">
+              Explore the active GCP deploy flow →
+            </Link>
+          </div>
+
+          <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {roadmapItems.map((item) => (
+              <li
+                key={item}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700"
+              >
+                {item}
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </main>

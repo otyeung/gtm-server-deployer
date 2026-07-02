@@ -79,6 +79,18 @@ describe("DeployWizard", () => {
     );
   });
 
+  it("keeps Confirm Apply enabled after planning with a trimmed custom domain", async () => {
+    const user = userEvent.setup();
+    render(<DeployWizard />);
+
+    await user.type(screen.getByLabelText("GCP project ID"), "gtm-server-deployer");
+    await user.type(screen.getByLabelText("GTM container config"), "secret-config");
+    await user.type(screen.getByLabelText("Custom domain"), "gtm.example.com ");
+    await user.click(screen.getByRole("button", { name: "Review and Plan" }));
+
+    expect(await screen.findByRole("button", { name: "Confirm Apply" })).toBeEnabled();
+  });
+
   it("requires a fresh plan after deployment settings change", async () => {
     const user = userEvent.setup();
     render(<DeployWizard />);

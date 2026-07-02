@@ -15,6 +15,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   deploymentInputSchema,
+  serializeDeploymentInput,
   sanitizeDeploymentInputForReview,
   type DeploymentInput,
   type DeploymentReview
@@ -110,9 +111,11 @@ export function DeployWizard() {
     register
   } = form;
   const watchedValues = useWatch({ control });
-  const currentSignature = JSON.stringify(watchedValues);
-  const planSucceeded = lastPlannedSignature !== null && currentSignature === lastPlannedSignature;
-  const requiresReplan = lastPlannedSignature !== null && currentSignature !== lastPlannedSignature;
+  const currentSignature = serializeDeploymentInput(watchedValues);
+  const planSucceeded =
+    lastPlannedSignature !== null && currentSignature !== null && currentSignature === lastPlannedSignature;
+  const requiresReplan =
+    lastPlannedSignature !== null && (currentSignature === null || currentSignature !== lastPlannedSignature);
   const statusMessage = requiresReplan
     ? "Deployment settings changed after the last successful plan. Run Review and Plan again before applying."
     : message;
@@ -141,7 +144,7 @@ export function DeployWizard() {
         return;
       }
 
-      setLastPlannedSignature(JSON.stringify(values));
+      setLastPlannedSignature(serializeDeploymentInput(values));
       setMessage("Terraform plan succeeded. Confirm Apply is now available.");
     } catch {
       setMessage("Unable to reach the plan endpoint. Check your network connection and retry Review and Plan.");

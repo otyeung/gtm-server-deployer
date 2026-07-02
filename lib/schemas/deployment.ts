@@ -43,6 +43,15 @@ export type DeploymentReview = Omit<DeploymentInput, "gtmContainerConfig"> & {
   gtmContainerConfig: "[REDACTED]";
 };
 
+export function serializeDeploymentInput(input: unknown): string | null {
+  const parsed = deploymentInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return null;
+  }
+
+  return JSON.stringify(parsed.data);
+}
+
 export function sanitizeDeploymentInputForReview(input: DeploymentInput): DeploymentReview {
   return {
     ...input,

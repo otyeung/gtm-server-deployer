@@ -12,9 +12,18 @@ type SettingsResponse = {
   error?: unknown;
 };
 
+type SettingsField = keyof LocalSettings;
+
+type FieldErrorMap = Partial<Record<SettingsField, string[]>>;
+
+type SettingsRequestError = {
+  detail: string | null;
+  fieldErrors: FieldErrorMap;
+};
+
 type SettingsRequestResult = {
   settings: LocalSettings | null;
-  error: string | null;
+  error: SettingsRequestError | null;
 };
 
 type FeedbackState =
@@ -25,17 +34,60 @@ type FeedbackState =
     }
   | null;
 
-function getErrorMessage(response: Response, payload: unknown): string {
-  if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "error" in payload &&
-    typeof (payload as SettingsResponse).error === "string"
-  ) {
-    return (payload as SettingsResponse).error as string;
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function getFieldLabel(field: SettingsField): string {
+  switch (field) {
+    case "terraformPath":
+      return "Terraform path";
+    case "gcloudPath":
+      return "gcloud path";
+    case "dockerPath":
+      return "Docker path";
+  }
+}
+
+function getFieldErrors(value: unknown): FieldErrorMap {
+  if (!isObject(value) || !isObject(value.fieldErrors)) {
+    return {};
   }
 
-  return `Request failed with status ${response.status}.`;
+  const fieldErrors = value.fieldErrors as Record<string, unknown>;
+
+  return (Object.keys(fieldErrors) as SettingsField[]).reduce<FieldErrorMap>((accumulator, field) => {
+    if (isStringArray(fieldErrors[field])) {
+      accumulator[field] = fieldErrors[field];
+    }
+
+    return accumulator;
+  }, {});
+}
+
+function getRequestError(response: Response, payload: unknown): SettingsRequestError {
+  if (isObject(payload) && "error" in payload) {
+    const error = (payload as SettingsResponse).error;
+
+    if (typeof error === "string") {
+      return { detail: error, fieldErrors: {} };
+    }
+
+    if (isObject(error)) {
+      const fieldErrors = getFieldErrors(error);
+      const detail = isStringArray(error.formErrors) ? error.formErrors.join(" ") : null;
+      return { detail, fieldErrors };
+    }
+  }
+
+  return {
+    detail: `Request failed with status ${response.status}.`,
+    fieldErrors: {}
+  };
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -55,19 +107,28 @@ async function requestSettings(
     const payload = await readJson(response);
 
     if (!response.ok) {
-      return { settings: null, error: getErrorMessage(response, payload) };
+      return { settings: null, error: getRequestError(response, payload) };
     }
 
     const parsed = settingsSchema.safeParse((payload as SettingsResponse | null)?.settings);
     if (!parsed.success) {
-      return { settings: null, error: "Response did not include valid settings." };
+      return {
+        settings: null,
+        error: {
+          detail: "Response did not include valid settings.",
+          fieldErrors: {}
+        }
+      };
     }
 
     return { settings: parsed.data, error: null };
   } catch (error) {
     return {
       settings: null,
-      error: error instanceof Error ? error.message : "Unknown error"
+      error: {
+        detail: error instanceof Error ? error.message : "Unknown error",
+        fieldErrors: {}
+      }
     };
   }
 }
@@ -75,6 +136,20 @@ async function requestSettings(
 export function SettingsForm() {
   const [settings, setSettings] = useState<LocalSettings>({ ...DEFAULT_LOCAL_SETTINGS });
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrorMap>({});
+
+  function updateSetting(field: SettingsField, value: string) {
+    setSettings((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -87,6 +162,7 @@ export function SettingsForm() {
 
       if (result.settings) {
         setSettings(result.settings);
+        setFieldErrors({});
         setFeedback(null);
         return;
       }
@@ -94,7 +170,7 @@ export function SettingsForm() {
       setFeedback({
         tone: "error",
         summary: "/api/settings could not be loaded. Check the local settings API, then try again.",
-        detail: result.error ?? undefined
+        detail: result.error?.detail ?? undefined
       });
     }
 
@@ -114,14 +190,16 @@ export function SettingsForm() {
 
     if (result.settings) {
       setSettings(result.settings);
+      setFieldErrors({});
       setFeedback({ tone: "success", summary: "Settings saved." });
       return;
     }
 
+    setFieldErrors(result.error?.fieldErrors ?? {});
     setFeedback({
       tone: "error",
       summary: "/api/settings could not be saved. Check the local settings API, then try again.",
-      detail: result.error ?? undefined
+      detail: result.error?.detail ?? undefined
     });
   }
 
@@ -139,25 +217,58 @@ export function SettingsForm() {
           <Label htmlFor="terraformPath">Terraform path</Label>
           <Input
             id="terraformPath"
-            onChange={(event) => setSettings({ ...settings, terraformPath: event.currentTarget.value })}
+            aria-describedby={fieldErrors.terraformPath ? "terraformPath-error" : undefined}
+            aria-invalid={fieldErrors.terraformPath ? true : undefined}
+            onChange={(event) => updateSetting("terraformPath", event.currentTarget.value)}
             value={settings.terraformPath}
           />
+          {fieldErrors.terraformPath ? (
+            <div className="mt-1 space-y-1 text-sm text-red-700" id="terraformPath-error">
+              {fieldErrors.terraformPath.map((message) => (
+                <p key={message}>
+                  {getFieldLabel("terraformPath")}: {message}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div>
           <Label htmlFor="gcloudPath">gcloud path</Label>
           <Input
             id="gcloudPath"
-            onChange={(event) => setSettings({ ...settings, gcloudPath: event.currentTarget.value })}
+            aria-describedby={fieldErrors.gcloudPath ? "gcloudPath-error" : undefined}
+            aria-invalid={fieldErrors.gcloudPath ? true : undefined}
+            onChange={(event) => updateSetting("gcloudPath", event.currentTarget.value)}
             value={settings.gcloudPath}
           />
+          {fieldErrors.gcloudPath ? (
+            <div className="mt-1 space-y-1 text-sm text-red-700" id="gcloudPath-error">
+              {fieldErrors.gcloudPath.map((message) => (
+                <p key={message}>
+                  {getFieldLabel("gcloudPath")}: {message}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div>
           <Label htmlFor="dockerPath">Docker path</Label>
           <Input
             id="dockerPath"
-            onChange={(event) => setSettings({ ...settings, dockerPath: event.currentTarget.value })}
+            aria-describedby={fieldErrors.dockerPath ? "dockerPath-error" : undefined}
+            aria-invalid={fieldErrors.dockerPath ? true : undefined}
+            onChange={(event) => updateSetting("dockerPath", event.currentTarget.value)}
             value={settings.dockerPath}
           />
+          {fieldErrors.dockerPath ? (
+            <div className="mt-1 space-y-1 text-sm text-red-700" id="dockerPath-error">
+              {fieldErrors.dockerPath.map((message) => (
+                <p key={message}>
+                  {getFieldLabel("dockerPath")}: {message}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <Button onClick={save} type="button">

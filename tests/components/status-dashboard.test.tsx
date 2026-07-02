@@ -57,6 +57,80 @@ describe("StatusDashboard", () => {
     );
   });
 
+  it("shows a retryable error when destroy returns a non-OK response", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+
+        if (url === "/api/status") {
+          return Response.json({ state: { phase: "applied", activeOperation: null, error: null } });
+        }
+
+        if (url === "/api/logs") {
+          return Response.json({ logs: "Terraform complete" });
+        }
+
+        if (url === "/api/destroy") {
+          return Response.json({ error: "Unable to destroy infrastructure." }, { status: 500 });
+        }
+
+        return Response.json({
+          outputs: {
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
+          }
+        });
+      }),
+    );
+
+    render(<StatusDashboard />);
+
+    await user.click(await screen.findByLabelText("I understand this will run terraform destroy."));
+    const button = screen.getByRole("button", { name: "Destroy" });
+    await user.click(button);
+
+    expect(await screen.findByText("Unable to destroy infrastructure.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Destroy" })).toBeEnabled();
+  });
+
+  it("shows a retryable error when destroy throws", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+
+        if (url === "/api/status") {
+          return Response.json({ state: { phase: "applied", activeOperation: null, error: null } });
+        }
+
+        if (url === "/api/logs") {
+          return Response.json({ logs: "Terraform complete" });
+        }
+
+        if (url === "/api/destroy" && init?.method === "POST") {
+          throw new Error("Destroy request failed.");
+        }
+
+        return Response.json({
+          outputs: {
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
+          }
+        });
+      }),
+    );
+
+    render(<StatusDashboard />);
+
+    await user.click(await screen.findByLabelText("I understand this will run terraform destroy."));
+    const button = screen.getByRole("button", { name: "Destroy" });
+    await user.click(button);
+
+    expect(await screen.findByText("Destroy request failed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Destroy" })).toBeEnabled();
+  });
+
   it("shows safe defaults when status endpoints return errors", async () => {
     vi.stubGlobal(
       "fetch",

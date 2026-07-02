@@ -1,5 +1,6 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,6 +33,15 @@ const input: DeploymentInput = {
 
 let rootDir: string;
 let terraformModuleDir: string;
+let spawnedProcesses: ChildProcess[] = [];
+
+type LockTargetMetadata = {
+  operation: "plan" | "apply" | "destroy";
+  pid: number;
+  ownerId: string;
+  processStartedAt: string;
+  acquiredAt: string;
+};
 
 function createDeferred() {
   let resolve!: () => void;
@@ -45,14 +55,44 @@ function createDeferred() {
 beforeEach(async () => {
   rootDir = path.join(process.cwd(), ".test-workspaces", `engine-${randomUUID()}`);
   terraformModuleDir = path.join(rootDir, "terraform-module");
+  spawnedProcesses = [];
   await mkdir(rootDir, { recursive: true });
   await mkdir(terraformModuleDir, { recursive: true });
   await writeFile(path.join(terraformModuleDir, "main.tf"), 'terraform {}\n', "utf8");
 });
 
 afterEach(async () => {
+  for (const child of spawnedProcesses) {
+    if (child.pid !== undefined && !child.killed) {
+      child.kill("SIGTERM");
+    }
+  }
+
   await rm(rootDir, { force: true, recursive: true });
 });
+
+function parseLockTarget(target: string): LockTargetMetadata | null {
+  if (!target.startsWith("v2:")) {
+    return null;
+  }
+
+  const parsed = JSON.parse(decodeURIComponent(target.slice(3))) as Partial<LockTargetMetadata>;
+  if (
+    (parsed.operation !== "plan" && parsed.operation !== "apply" && parsed.operation !== "destroy")
+    || !Number.isInteger(parsed.pid)
+    || typeof parsed.ownerId !== "string"
+    || typeof parsed.processStartedAt !== "string"
+    || typeof parsed.acquiredAt !== "string"
+  ) {
+    return null;
+  }
+
+  return parsed as LockTargetMetadata;
+}
+
+function encodeLockTarget(metadata: LockTargetMetadata): string {
+  return `v2:${encodeURIComponent(JSON.stringify(metadata))}`;
+}
 
 describe("createDeploymentEngine", () => {
   it("runs init and plan before marking deployment planned", async () => {
@@ -326,6 +366,142 @@ describe("createDeploymentEngine", () => {
 
     await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+  });
+
+  it("recovers a lock with the current pid when the owner identity changed", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const initStarted = createDeferred();
+    const releaseInit = createDeferred();
+    let initCalls = 0;
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        if (options.command === "init") {
+          initCalls += 1;
+          if (initCalls === 1) {
+            initStarted.resolve();
+            await releaseInit.promise;
+          }
+        }
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          logCallbackErrors: []
+        };
+      },
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    const firstPlan = engine.plan(input);
+    await initStarted.promise;
+    const activeLockMetadata = parseLockTarget(await readlink(paths.operationLockDir));
+    expect(activeLockMetadata).not.toBeNull();
+    releaseInit.resolve();
+    await firstPlan;
+
+    await mkdir(paths.workspaceDir, { recursive: true });
+    await symlink(
+      encodeLockTarget({
+        ...activeLockMetadata!,
+        ownerId: randomUUID()
+      }),
+      paths.operationLockDir,
+    );
+
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan", "init", "plan"]);
+  });
+
+  it("keeps a lock with the current owner identity active", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const initStarted = createDeferred();
+    const releaseInit = createDeferred();
+    let initCalls = 0;
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        if (options.command === "init") {
+          initCalls += 1;
+          if (initCalls === 1) {
+            initStarted.resolve();
+            await releaseInit.promise;
+          }
+        }
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          logCallbackErrors: []
+        };
+      },
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    const firstPlan = engine.plan(input);
+    await initStarted.promise;
+    const activeLockTarget = await readlink(paths.operationLockDir);
+    const activeLockMetadata = parseLockTarget(activeLockTarget);
+    expect(activeLockMetadata).not.toBeNull();
+    releaseInit.resolve();
+    await firstPlan;
+
+    await mkdir(paths.workspaceDir, { recursive: true });
+    await symlink(activeLockTarget, paths.operationLockDir);
+
+    await expect(engine.plan(input)).rejects.toMatchObject({
+      message: expect.stringContaining("Another deployment operation is already running: plan")
+    });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+  });
+
+  it("does not recover a live lock owned by another running process", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore"
+    });
+    spawnedProcesses.push(child);
+
+    await mkdir(paths.workspaceDir, { recursive: true });
+    await symlink(
+      encodeLockTarget({
+        operation: "plan",
+        pid: child.pid!,
+        ownerId: randomUUID(),
+        processStartedAt: "2026-07-02T00:00:00.000Z",
+        acquiredAt: "2026-07-02T00:01:00.000Z"
+      }),
+      paths.operationLockDir,
+    );
+
+    await expect(engine.plan(input)).rejects.toMatchObject({
+      message: expect.stringContaining("Another deployment operation is already running: plan")
+    });
+    expect(runner).not.toHaveBeenCalled();
   });
 
   it("treats a lock with missing metadata as active instead of recovering it", async () => {

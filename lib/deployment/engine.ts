@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, readFile, readlink, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { deploymentInputSchema, type DeploymentInput } from "@/lib/schemas/deployment";
@@ -52,16 +53,22 @@ function now(): string {
 const processOperationLocks = new Map<string, string>();
 const ACTIVE_OPERATIONS = new Set(["plan", "apply", "destroy"]);
 const ACTIVE_PHASES = new Set(["planning", "applying", "destroying"]);
+const PROCESS_LOCK_OWNER_ID = randomUUID();
+const PROCESS_STARTED_AT = new Date(performance.timeOrigin).toISOString();
 
 type OperationLockMetadata = {
   operation: DeploymentOperation;
   pid: number;
+  ownerId: string | null;
+  processStartedAt: string | null;
   acquiredAt: string;
 };
 
 type LegacyOperationLockMetadata = {
   operation?: string;
   pid?: number;
+  ownerId?: string;
+  processStartedAt?: string;
   acquiredAt?: string;
 };
 
@@ -125,9 +132,19 @@ function parseOperationLockMetadata(
     return null;
   }
 
+  const processStartedAt = typeof metadata.processStartedAt === "string"
+    && !Number.isNaN(Date.parse(metadata.processStartedAt))
+    ? new Date(Date.parse(metadata.processStartedAt)).toISOString()
+    : null;
+  const ownerId = typeof metadata.ownerId === "string" && metadata.ownerId.length > 0
+    ? metadata.ownerId
+    : null;
+
   return {
     operation: metadata.operation,
     pid: metadata.pid,
+    ownerId,
+    processStartedAt,
     acquiredAt: new Date(acquiredAt).toISOString()
   };
 }
@@ -166,10 +183,18 @@ async function readLegacyOperationLockMetadata(paths: WorkspacePaths): Promise<L
 }
 
 function encodeOperationLockTarget(metadata: OperationLockMetadata): string {
-  return `${metadata.operation}:${metadata.pid}:${metadata.acquiredAt}`;
+  return `v2:${encodeURIComponent(JSON.stringify(metadata))}`;
 }
 
 function parseOperationLockTarget(target: string): OperationLockMetadata | null {
+  if (target.startsWith("v2:")) {
+    try {
+      return parseOperationLockMetadata(JSON.parse(decodeURIComponent(target.slice(3))) as LegacyOperationLockMetadata);
+    } catch {
+      return null;
+    }
+  }
+
   const [operation, pidValue, ...timestampParts] = target.split(":");
   const acquiredAt = timestampParts.join(":");
   const pid = Number.parseInt(pidValue ?? "", 10);
@@ -182,6 +207,18 @@ function parseOperationLockTarget(target: string): OperationLockMetadata | null 
 }
 
 function getLockStaleReason(metadata: OperationLockMetadata): string | null {
+  if (metadata.pid === process.pid) {
+    if (metadata.ownerId !== null && metadata.ownerId !== PROCESS_LOCK_OWNER_ID) {
+      return "lock owner identity does not match current process";
+    }
+
+    if (metadata.processStartedAt !== null && metadata.processStartedAt !== PROCESS_STARTED_AT) {
+      return "lock owner start time does not match current process";
+    }
+
+    return null;
+  }
+
   if (isProcessAlive(metadata.pid)) {
     return null;
   }
@@ -311,6 +348,8 @@ async function acquireOperationGuard(
       encodeOperationLockTarget({
         operation,
         pid: process.pid,
+        ownerId: PROCESS_LOCK_OWNER_ID,
+        processStartedAt: PROCESS_STARTED_AT,
         acquiredAt: now()
       }),
       paths.operationLockDir,

@@ -30,10 +30,10 @@ output "https_url" {
 
 output "load_balancer_ip" {
   description = "Global load balancer IP address when custom domain is configured."
-  value       = null
+  value       = var.custom_domain != "" ? google_compute_global_address.https[0].address : null
 }
 
 output "certificate_name" {
   description = "Certificate Manager certificate name when custom domain is configured."
-  value       = null
+  value       = var.custom_domain != "" && var.use_managed_ssl ? google_certificate_manager_certificate.domain[0].name : null
 }

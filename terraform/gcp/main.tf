@@ -177,3 +177,117 @@ resource "google_cloud_run_v2_service_iam_member" "preview_public" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+
+resource "google_compute_global_address" "https" {
+  count   = local.custom_domain_enabled ? 1 : 0
+  project = var.project_id
+  name    = "${local.name_prefix}-https-ip"
+}
+
+resource "google_compute_region_network_endpoint_group" "serverless" {
+  count                 = local.custom_domain_enabled ? 1 : 0
+  project               = var.project_id
+  name                  = "${local.name_prefix}-server-neg"
+  network_endpoint_type = "SERVERLESS"
+  region                = var.region
+
+  cloud_run {
+    service = google_cloud_run_v2_service.server.name
+  }
+}
+
+resource "google_compute_backend_service" "server" {
+  count                 = local.custom_domain_enabled ? 1 : 0
+  project               = var.project_id
+  name                  = "${local.name_prefix}-server-backend"
+  protocol              = "HTTP"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  timeout_sec           = 30
+
+  backend {
+    group = google_compute_region_network_endpoint_group.serverless[0].id
+  }
+}
+
+resource "google_compute_url_map" "https" {
+  count           = local.custom_domain_enabled ? 1 : 0
+  project         = var.project_id
+  name            = "${local.name_prefix}-url-map"
+  default_service = google_compute_backend_service.server[0].id
+
+  host_rule {
+    hosts        = [var.custom_domain]
+    path_matcher = "gtm"
+  }
+
+  path_matcher {
+    name            = "gtm"
+    default_service = google_compute_backend_service.server[0].id
+  }
+}
+
+resource "google_certificate_manager_dns_authorization" "domain" {
+  count       = local.custom_domain_enabled && var.use_managed_ssl ? 1 : 0
+  name        = "${local.name_prefix}-dns-auth"
+  description = "DNS authorization for GTM Server custom domain"
+  domain      = var.custom_domain
+}
+
+resource "google_certificate_manager_certificate" "domain" {
+  count       = local.custom_domain_enabled && var.use_managed_ssl ? 1 : 0
+  name        = "${local.name_prefix}-cert"
+  description = "Managed certificate for GTM Server custom domain"
+  scope       = "DEFAULT"
+
+  managed {
+    domains            = [google_certificate_manager_dns_authorization.domain[0].domain]
+    dns_authorizations = [google_certificate_manager_dns_authorization.domain[0].id]
+  }
+}
+
+resource "google_compute_target_https_proxy" "https" {
+  count                            = local.custom_domain_enabled ? 1 : 0
+  project                          = var.project_id
+  name                             = "${local.name_prefix}-https-proxy"
+  url_map                          = google_compute_url_map.https[0].id
+  certificate_manager_certificates = var.use_managed_ssl ? [google_certificate_manager_certificate.domain[0].id] : []
+}
+
+resource "google_compute_global_forwarding_rule" "https" {
+  count                 = local.custom_domain_enabled ? 1 : 0
+  project               = var.project_id
+  name                  = "${local.name_prefix}-https-forwarding-rule"
+  ip_address            = google_compute_global_address.https[0].id
+  port_range            = "443"
+  target                = google_compute_target_https_proxy.https[0].id
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+resource "google_dns_managed_zone" "domain" {
+  count       = local.custom_domain_enabled && var.enable_cloud_dns ? 1 : 0
+  project     = var.project_id
+  name        = replace("${local.name_prefix}-${var.custom_domain}", ".", "-")
+  dns_name    = "${var.custom_domain}."
+  description = "Managed zone for GTM Server custom domain"
+  labels      = local.labels
+}
+
+resource "google_dns_record_set" "domain_a" {
+  count        = local.custom_domain_enabled && var.enable_cloud_dns ? 1 : 0
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.domain[0].name
+  name         = "${var.custom_domain}."
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_global_address.https[0].address]
+}
+
+resource "google_dns_record_set" "certificate_auth" {
+  count        = local.custom_domain_enabled && var.enable_cloud_dns && var.use_managed_ssl ? 1 : 0
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.domain[0].name
+  name         = google_certificate_manager_dns_authorization.domain[0].dns_resource_record[0].name
+  type         = google_certificate_manager_dns_authorization.domain[0].dns_resource_record[0].type
+  ttl          = 300
+  rrdatas      = [google_certificate_manager_dns_authorization.domain[0].dns_resource_record[0].data]
+}

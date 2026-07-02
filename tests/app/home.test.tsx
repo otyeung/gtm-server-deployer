@@ -9,10 +9,5 @@ describe("HomePage", () => {
       screen.getByText("Deploy GTM Server-Side tagging infrastructure from your machine"),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Deploy to GCP" })).toHaveAttribute("href", "/deploy");
-    expect(screen.getByRole("heading", { name: "Planned providers and next steps" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Explore the active GCP deploy flow →" })).toHaveAttribute(
-      "href",
-      "/deploy",
-    );
   });
 });

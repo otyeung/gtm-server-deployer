@@ -218,6 +218,122 @@ describe("createDeploymentEngine", () => {
     await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
   });
 
+  it("does not recover a live lock only because its timestamp is old", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await mkdir(paths.operationLockDir, { recursive: true });
+    await writeFile(
+      path.join(paths.operationLockDir, "metadata.json"),
+      `${JSON.stringify({ operation: "plan", pid: process.pid, acquiredAt: "2026-07-02T00:01:00.000Z" }, null, 2)}\n`,
+      "utf8",
+    );
+
+    await expect(engine.plan(input)).rejects.toMatchObject({
+      message: expect.stringContaining("Another deployment operation is already running: plan")
+    });
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("recovers a dead lock owner and allows planning to proceed", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await mkdir(paths.operationLockDir, { recursive: true });
+    await writeFile(
+      path.join(paths.operationLockDir, "metadata.json"),
+      `${JSON.stringify({ operation: "plan", pid: 999999, acquiredAt: "2026-07-02T00:01:00.000Z" }, null, 2)}\n`,
+      "utf8",
+    );
+
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+  });
+
+  it("treats a lock with missing metadata as active instead of recovering it", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await mkdir(paths.operationLockDir, { recursive: true });
+
+    await expect(engine.plan(input)).rejects.toMatchObject({
+      message: expect.stringContaining("Another deployment operation is already running: plan")
+    });
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("recovers a persisted active operation when no live lock remains", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await writeDeploymentState(paths, {
+      phase: "planning",
+      activeOperation: "plan",
+      projectId: input.projectId,
+      region: input.region,
+      startedAt: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:01:00.000Z",
+      lastSuccessfulPlanAt: null,
+      error: null
+    });
+
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+  });
+
   it("clears old outputs when starting a new plan", async () => {
     const outputs: TerraformOutputMap = {
       service_url: { sensitive: false, type: "string", value: "https://old.example.com" }

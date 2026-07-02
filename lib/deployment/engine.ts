@@ -1,6 +1,6 @@
 import "server-only";
 
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readlink, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { deploymentInputSchema, type DeploymentInput } from "@/lib/schemas/deployment";
 import { DEFAULT_LOCAL_SETTINGS, type LocalSettings } from "@/lib/schemas/settings";
@@ -11,7 +11,7 @@ import {
 } from "@/lib/terraform/runner";
 import { DeploymentEngineError, normalizeError } from "./errors";
 import { getWorkspacePaths } from "./paths";
-import type { DeploymentState, TerraformOutputMap, WorkspacePaths } from "./types";
+import type { DeploymentOperation, DeploymentState, TerraformOutputMap, WorkspacePaths } from "./types";
 import {
   appendDeploymentLog,
   clearTerraformOutputs,
@@ -49,14 +49,36 @@ function now(): string {
 }
 
 const processOperationLocks = new Map<string, string>();
-const STALE_OPERATION_LOCK_MAX_AGE_MS = 1000 * 60 * 30;
 const ACTIVE_OPERATIONS = new Set(["plan", "apply", "destroy"]);
+const ACTIVE_PHASES = new Set(["planning", "applying", "destroying"]);
 
 type OperationLockMetadata = {
+  operation: DeploymentOperation;
+  pid: number;
+  acquiredAt: string;
+};
+
+type LegacyOperationLockMetadata = {
   operation?: string;
   pid?: number;
   acquiredAt?: string;
 };
+
+type OperationLockStatus =
+  | {
+      kind: "missing";
+    }
+  | {
+      kind: "active";
+      operation: DeploymentOperation;
+      metadata: OperationLockMetadata | null;
+    }
+  | {
+      kind: "recoverable";
+      operation: DeploymentOperation;
+      metadata: OperationLockMetadata;
+      staleReason: string;
+    };
 
 function isDeploymentOperation(value: string | null | undefined): value is "plan" | "apply" | "destroy" {
   return value !== undefined && value !== null && ACTIVE_OPERATIONS.has(value);
@@ -78,33 +100,35 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function getStaleLockReason(metadata: OperationLockMetadata | null): string | null {
+function parseOperationLockMetadata(
+  metadata: LegacyOperationLockMetadata | null,
+): OperationLockMetadata | null {
   if (!metadata) {
-    return "invalid lock metadata";
+    return null;
   }
 
   if (!Number.isInteger(metadata.pid) || (metadata.pid ?? 0) <= 0) {
-    return "invalid lock pid";
+    return null;
+  }
+
+  if (!isDeploymentOperation(metadata.operation)) {
+    return null;
   }
 
   if (typeof metadata.acquiredAt !== "string") {
-    return "missing lock timestamp";
+    return null;
   }
 
   const acquiredAt = Date.parse(metadata.acquiredAt);
   if (Number.isNaN(acquiredAt)) {
-    return "invalid lock timestamp";
+    return null;
   }
 
-  if (Date.now() - acquiredAt > STALE_OPERATION_LOCK_MAX_AGE_MS) {
-    return "expired lock timestamp";
-  }
-
-  if (!isProcessAlive(metadata.pid)) {
-    return "lock owner is not running";
-  }
-
-  return null;
+  return {
+    operation: metadata.operation,
+    pid: metadata.pid,
+    acquiredAt: new Date(acquiredAt).toISOString()
+  };
 }
 
 function createOperationLockError(activeOperation: string): DeploymentEngineError {
@@ -132,12 +156,86 @@ async function copyTerraformModule(sourceDir: string, targetDir: string): Promis
   await cp(sourceDir, targetDir, { recursive: true, force: true });
 }
 
-async function readOperationLockMetadata(paths: WorkspacePaths): Promise<OperationLockMetadata | null> {
+async function readLegacyOperationLockMetadata(paths: WorkspacePaths): Promise<LegacyOperationLockMetadata | null> {
   try {
-    return JSON.parse(await readFile(path.join(paths.operationLockDir, "metadata.json"), "utf8")) as OperationLockMetadata;
+    return JSON.parse(await readFile(path.join(paths.operationLockDir, "metadata.json"), "utf8")) as LegacyOperationLockMetadata;
   } catch {
     return null;
   }
+}
+
+function encodeOperationLockTarget(metadata: OperationLockMetadata): string {
+  return `${metadata.operation}:${metadata.pid}:${metadata.acquiredAt}`;
+}
+
+function parseOperationLockTarget(target: string): OperationLockMetadata | null {
+  const [operation, pidValue, ...timestampParts] = target.split(":");
+  const acquiredAt = timestampParts.join(":");
+  const pid = Number.parseInt(pidValue ?? "", 10);
+
+  return parseOperationLockMetadata({
+    operation,
+    pid,
+    acquiredAt
+  });
+}
+
+function getLockStaleReason(metadata: OperationLockMetadata): string | null {
+  if (isProcessAlive(metadata.pid)) {
+    return null;
+  }
+
+  return "lock owner is not running";
+}
+
+async function inspectOperationLock(
+  paths: WorkspacePaths,
+  fallbackOperation: DeploymentOperation,
+): Promise<OperationLockStatus> {
+  let stats;
+
+  try {
+    stats = await lstat(paths.operationLockDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { kind: "missing" };
+    }
+
+    throw error;
+  }
+
+  if (stats.isSymbolicLink()) {
+    const metadata = parseOperationLockTarget(await readlink(paths.operationLockDir));
+
+    if (!metadata) {
+      return { kind: "active", operation: fallbackOperation, metadata: null };
+    }
+
+    const staleReason = getLockStaleReason(metadata);
+    if (!staleReason) {
+      return { kind: "active", operation: metadata.operation, metadata };
+    }
+
+    return { kind: "recoverable", operation: metadata.operation, metadata, staleReason };
+  }
+
+  if (stats.isDirectory()) {
+    const metadata = parseOperationLockMetadata(await readLegacyOperationLockMetadata(paths));
+    const operation = getOperationLabel(metadata?.operation, fallbackOperation);
+
+    if (!metadata) {
+      return { kind: "active", operation, metadata: null };
+    }
+
+    const staleReason = getLockStaleReason(metadata);
+    if (!staleReason) {
+      return { kind: "active", operation, metadata };
+    }
+
+    return { kind: "recoverable", operation, metadata, staleReason };
+  }
+
+  return { kind: "active", operation: fallbackOperation, metadata: null };
 }
 
 async function markStaleOperationRecovered(
@@ -175,6 +273,20 @@ async function recoverStaleOperationLock(
   await rm(paths.operationLockDir, { force: true, recursive: true });
 }
 
+async function recoverPersistedActiveOperation(
+  paths: WorkspacePaths,
+  fallbackOperation: DeploymentOperation,
+): Promise<DeploymentState> {
+  const state = await readDeploymentState(paths);
+
+  if (state.activeOperation || ACTIVE_PHASES.has(state.phase)) {
+    await markStaleOperationRecovered(paths, fallbackOperation, "missing live operation lock", null);
+    return readDeploymentState(paths);
+  }
+
+  return state;
+}
+
 async function acquireOperationGuard(
   paths: WorkspacePaths,
   operation: "plan" | "apply" | "destroy",
@@ -194,34 +306,32 @@ async function acquireOperationGuard(
   }
 
   try {
-    await mkdir(paths.operationLockDir);
+    await symlink(
+      encodeOperationLockTarget({
+        operation,
+        pid: process.pid,
+        acquiredAt: now()
+      }),
+      paths.operationLockDir,
+    );
   } catch (error) {
     processOperationLocks.delete(workspaceKey);
 
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      const metadata = await readOperationLockMetadata(paths);
-      const staleReason = getStaleLockReason(metadata);
+      const lockStatus = await inspectOperationLock(paths, operation);
 
-      if (staleReason) {
-        await recoverStaleOperationLock(paths, operation, staleReason, metadata);
+      if (lockStatus.kind === "missing") {
         return acquireOperationGuard(paths, operation);
       }
 
-      throw createOperationLockError(getOperationLabel(metadata?.operation, operation));
+      if (lockStatus.kind === "recoverable") {
+        await recoverStaleOperationLock(paths, operation, lockStatus.staleReason, lockStatus.metadata);
+        return acquireOperationGuard(paths, operation);
+      }
+
+      throw createOperationLockError(lockStatus.operation);
     }
 
-    throw error;
-  }
-
-  try {
-    await writeFile(
-      path.join(paths.operationLockDir, "metadata.json"),
-      `${JSON.stringify({ operation, pid: process.pid, acquiredAt: now() }, null, 2)}\n`,
-      "utf8",
-    );
-  } catch (error) {
-    processOperationLocks.delete(workspaceKey);
-    await rm(paths.operationLockDir, { force: true, recursive: true });
     throw error;
   }
 
@@ -268,7 +378,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       const releaseGuard = await acquireOperationGuard(paths, "plan");
 
       try {
-        const previous = await readDeploymentState(paths);
+        const previous = await recoverPersistedActiveOperation(paths, "plan");
         assertNoActiveOperation(previous);
 
         const startedAt = now();
@@ -322,7 +432,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       const releaseGuard = await acquireOperationGuard(paths, "apply");
 
       try {
-        const state = await readDeploymentState(paths);
+        const state = await recoverPersistedActiveOperation(paths, "apply");
         assertNoActiveOperation(state);
         if (state.phase !== "planned" || !state.lastSuccessfulPlanAt) {
           throw new DeploymentEngineError({
@@ -353,7 +463,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       const releaseGuard = await acquireOperationGuard(paths, "destroy");
 
       try {
-        const state = await readDeploymentState(paths);
+        const state = await recoverPersistedActiveOperation(paths, "destroy");
         assertNoActiveOperation(state);
         await setState({ ...state, phase: "destroying", activeOperation: "destroy", updatedAt: now() });
         try {

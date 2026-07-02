@@ -49,6 +49,63 @@ function now(): string {
 }
 
 const processOperationLocks = new Map<string, string>();
+const STALE_OPERATION_LOCK_MAX_AGE_MS = 1000 * 60 * 30;
+const ACTIVE_OPERATIONS = new Set(["plan", "apply", "destroy"]);
+
+type OperationLockMetadata = {
+  operation?: string;
+  pid?: number;
+  acquiredAt?: string;
+};
+
+function isDeploymentOperation(value: string | null | undefined): value is "plan" | "apply" | "destroy" {
+  return value !== undefined && value !== null && ACTIVE_OPERATIONS.has(value);
+}
+
+function getOperationLabel(
+  operation: string | null | undefined,
+  fallback: "plan" | "apply" | "destroy",
+): "plan" | "apply" | "destroy" {
+  return isDeploymentOperation(operation) ? operation : fallback;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function getStaleLockReason(metadata: OperationLockMetadata | null): string | null {
+  if (!metadata) {
+    return "invalid lock metadata";
+  }
+
+  if (!Number.isInteger(metadata.pid) || (metadata.pid ?? 0) <= 0) {
+    return "invalid lock pid";
+  }
+
+  if (typeof metadata.acquiredAt !== "string") {
+    return "missing lock timestamp";
+  }
+
+  const acquiredAt = Date.parse(metadata.acquiredAt);
+  if (Number.isNaN(acquiredAt)) {
+    return "invalid lock timestamp";
+  }
+
+  if (Date.now() - acquiredAt > STALE_OPERATION_LOCK_MAX_AGE_MS) {
+    return "expired lock timestamp";
+  }
+
+  if (!isProcessAlive(metadata.pid)) {
+    return "lock owner is not running";
+  }
+
+  return null;
+}
 
 function createOperationLockError(activeOperation: string): DeploymentEngineError {
   return new DeploymentEngineError({
@@ -71,7 +128,51 @@ function assertNoActiveOperation(state: DeploymentState): void {
 }
 
 async function copyTerraformModule(sourceDir: string, targetDir: string): Promise<void> {
+  await rm(targetDir, { force: true, recursive: true });
   await cp(sourceDir, targetDir, { recursive: true, force: true });
+}
+
+async function readOperationLockMetadata(paths: WorkspacePaths): Promise<OperationLockMetadata | null> {
+  try {
+    return JSON.parse(await readFile(path.join(paths.operationLockDir, "metadata.json"), "utf8")) as OperationLockMetadata;
+  } catch {
+    return null;
+  }
+}
+
+async function markStaleOperationRecovered(
+  paths: WorkspacePaths,
+  fallbackOperation: "plan" | "apply" | "destroy",
+  staleReason: string,
+  metadata: OperationLockMetadata | null,
+): Promise<void> {
+  const state = await readDeploymentState(paths);
+  const recoveredOperation = getOperationLabel(metadata?.operation ?? state.activeOperation, fallbackOperation);
+
+  if (state.activeOperation || ["planning", "applying", "destroying"].includes(state.phase)) {
+    await writeDeploymentState(paths, {
+      ...state,
+      phase: "failed",
+      activeOperation: null,
+      updatedAt: now(),
+      error: {
+        category: "terraform_failed",
+        phase: "failed",
+        message: `Recovered stale deployment operation: ${recoveredOperation} (${staleReason}).`,
+        remediation: "Retry the deployment action."
+      }
+    });
+  }
+}
+
+async function recoverStaleOperationLock(
+  paths: WorkspacePaths,
+  fallbackOperation: "plan" | "apply" | "destroy",
+  staleReason: string,
+  metadata: OperationLockMetadata | null,
+): Promise<void> {
+  await markStaleOperationRecovered(paths, fallbackOperation, staleReason, metadata);
+  await rm(paths.operationLockDir, { force: true, recursive: true });
 }
 
 async function acquireOperationGuard(
@@ -85,7 +186,12 @@ async function acquireOperationGuard(
   }
 
   processOperationLocks.set(workspaceKey, operation);
-  await ensureWorkspace(paths);
+  try {
+    await ensureWorkspace(paths);
+  } catch (error) {
+    processOperationLocks.delete(workspaceKey);
+    throw error;
+  }
 
   try {
     await mkdir(paths.operationLockDir);
@@ -93,18 +199,15 @@ async function acquireOperationGuard(
     processOperationLocks.delete(workspaceKey);
 
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      let activeOperation = operation;
+      const metadata = await readOperationLockMetadata(paths);
+      const staleReason = getStaleLockReason(metadata);
 
-      try {
-        const metadata = JSON.parse(
-          await readFile(path.join(paths.operationLockDir, "metadata.json"), "utf8"),
-        ) as { operation?: string };
-        activeOperation = metadata.operation ?? activeOperation;
-      } catch {
-        // Best effort only.
+      if (staleReason) {
+        await recoverStaleOperationLock(paths, operation, staleReason, metadata);
+        return acquireOperationGuard(paths, operation);
       }
 
-      throw createOperationLockError(activeOperation);
+      throw createOperationLockError(getOperationLabel(metadata?.operation, operation));
     }
 
     throw error;

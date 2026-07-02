@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,7 @@ import { createDeploymentEngine } from "@/lib/deployment/engine";
 import { getWorkspacePaths } from "@/lib/deployment/paths";
 import type { DeploymentInput } from "@/lib/schemas/deployment";
 import type { TerraformCommandOptions, TerraformCommandResult } from "@/lib/terraform/runner";
-import { writeDeploymentState, writeTerraformOutputs } from "@/lib/deployment/workspace";
+import { readDeploymentState, writeDeploymentState, writeTerraformOutputs } from "@/lib/deployment/workspace";
 import type { TerraformOutputMap } from "@/lib/deployment/types";
 
 const input: DeploymentInput = {
@@ -153,6 +153,71 @@ describe("createDeploymentEngine", () => {
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
   });
 
+  it("releases the in-memory operation lock when workspace setup fails", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await writeFile(paths.workspaceDir, "blocked", "utf8");
+    await expect(engine.plan(input)).rejects.toMatchObject({ code: "EEXIST" });
+
+    await rm(paths.workspaceDir, { force: true, recursive: true });
+
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned" });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+  });
+
+  it("recovers a stale persisted lock and active operation before planning again", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await writeDeploymentState(paths, {
+      phase: "planning",
+      activeOperation: "plan",
+      projectId: input.projectId,
+      region: input.region,
+      startedAt: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:01:00.000Z",
+      lastSuccessfulPlanAt: null,
+      error: null
+    });
+    await mkdir(paths.operationLockDir, { recursive: true });
+    await writeFile(
+      path.join(paths.operationLockDir, "metadata.json"),
+      `${JSON.stringify({ operation: "plan", pid: 999999, acquiredAt: "2026-07-02T00:01:00.000Z" }, null, 2)}\n`,
+      "utf8",
+    );
+
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+  });
+
   it("clears old outputs when starting a new plan", async () => {
     const outputs: TerraformOutputMap = {
       service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
@@ -177,6 +242,33 @@ describe("createDeploymentEngine", () => {
     await engine.plan(input);
 
     expect(await engine.getOutputs()).toEqual({});
+  });
+
+  it("recreates the Terraform workdir so removed module files do not persist", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+    const staleTerraformFile = path.join(paths.gcpWorkdir, "removed.tf");
+
+    await mkdir(paths.gcpWorkdir, { recursive: true });
+    await writeFile(staleTerraformFile, "# stale terraform file\n", "utf8");
+
+    await engine.plan(input);
+
+    await expect(readFile(staleTerraformFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(paths.gcpWorkdir, "main.tf"), "utf8")).resolves.toBe("terraform {}\n");
   });
 
   it("clears old outputs after a successful destroy", async () => {

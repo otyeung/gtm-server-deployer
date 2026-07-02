@@ -29,19 +29,19 @@ The MVP demonstrates cloud architecture, Infrastructure as Code, Terraform autom
 
 ## Key Decisions
 
-| Area | Decision |
-| --- | --- |
-| MVP scope | Local Next.js app plus functional GCP deployment only |
-| Architecture | Next.js all-in-one local control plane using App Router and API routes |
-| Execution | Run installed local `gcloud`, Docker, and Terraform tools |
-| Workspace | Store generated local artifacts under `.gtm-server-deployer/` |
-| Deployment count | Support one active local deployment at a time |
-| Apply safety | Run `terraform plan` first; require Confirm Apply before `terraform apply` |
-| GTM config | User pastes GTM server container config; app stores it in Secret Manager |
-| Preview server | Enabled by default, with an option to disable |
-| HTTPS default | Use Cloud Run HTTPS URLs by default |
-| Custom domain | Optional HTTPS load balancer, managed certificate, and Cloud DNS path |
-| Multi-cloud | Include provider placeholders, but implement only GCP in the MVP |
+| Area             | Decision                                                                   |
+| ---------------- | -------------------------------------------------------------------------- |
+| MVP scope        | Local Next.js app plus functional GCP deployment only                      |
+| Architecture     | Next.js all-in-one local control plane using App Router and API routes     |
+| Execution        | Run installed local `gcloud`, Docker, and Terraform tools                  |
+| Workspace        | Store generated local artifacts under `.gtm-server-deployer/`              |
+| Deployment count | Support one active local deployment at a time                              |
+| Apply safety     | Run `terraform plan` first; require Confirm Apply before `terraform apply` |
+| GTM config       | User pastes GTM server container config; app stores it in Secret Manager   |
+| Preview server   | Enabled by default, with an option to disable                              |
+| HTTPS default    | Use Cloud Run HTTPS URLs by default                                        |
+| Custom domain    | Optional HTTPS load balancer, managed certificate, and Cloud DNS path      |
+| Multi-cloud      | Include provider placeholders, but implement only GCP in the MVP           |
 
 ## Architecture
 
@@ -123,14 +123,14 @@ Settings store local defaults for Terraform path, Docker path, and gcloud path. 
 
 The MVP uses route handlers backed by a shared deployment engine:
 
-| Route | Purpose |
-| --- | --- |
-| `POST /api/deploy/plan` | Validate input, prepare workspace, generate tfvars, run `terraform init`, and run `terraform plan` |
-| `POST /api/deploy/apply` | Apply the latest successful plan after explicit user confirmation |
-| `POST /api/destroy` | Run `terraform destroy` for the active deployment |
-| `GET /api/status` | Return current deployment phase, timestamps, resource summary, and operation state |
-| `GET /api/logs` | Return Terraform logs with sensitive values redacted |
-| `GET /api/output` | Return parsed Terraform outputs from the active deployment |
+| Route                    | Purpose                                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------------------------- |
+| `POST /api/deploy/plan`  | Validate input, prepare workspace, generate tfvars, run `terraform init`, and run `terraform plan` |
+| `POST /api/deploy/apply` | Apply the latest successful plan after explicit user confirmation                                  |
+| `POST /api/destroy`      | Run `terraform destroy` for the active deployment                                                  |
+| `GET /api/status`        | Return current deployment phase, timestamps, resource summary, and operation state                 |
+| `GET /api/logs`          | Return Terraform logs with sensitive values redacted                                               |
+| `GET /api/output`        | Return parsed Terraform outputs from the active deployment                                         |
 
 The engine rejects concurrent deploy, apply, and destroy operations. It records operation state transitions so the UI can recover after refresh.
 
@@ -163,14 +163,14 @@ Confirm destroy
 
 The generated workspace contains:
 
-| Path | Purpose |
-| --- | --- |
-| `.gtm-server-deployer/state.json` | Active deployment metadata and current phase |
-| `.gtm-server-deployer/settings.json` | Local binary path preferences |
-| `.gtm-server-deployer/terraform.tfvars.json` | Generated Terraform variables, including sensitive input |
-| `.gtm-server-deployer/logs/deployment.log` | Append-only Terraform and engine logs with redaction at read time |
-| `.gtm-server-deployer/outputs.json` | Last successful `terraform output -json` result |
-| `.gtm-server-deployer/workdir/gcp/` | Terraform working directory for the GCP module |
+| Path                                         | Purpose                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------- |
+| `.gtm-server-deployer/state.json`            | Active deployment metadata and current phase                      |
+| `.gtm-server-deployer/settings.json`         | Local binary path preferences                                     |
+| `.gtm-server-deployer/terraform.tfvars.json` | Generated Terraform variables, including sensitive input          |
+| `.gtm-server-deployer/logs/deployment.log`   | Append-only Terraform and engine logs with redaction at read time |
+| `.gtm-server-deployer/outputs.json`          | Last successful `terraform output -json` result                   |
+| `.gtm-server-deployer/workdir/gcp/`          | Terraform working directory for the GCP module                    |
 
 Secrets must never be printed to terminal logs, API responses, or the UI. Local files containing secrets remain inside the ignored workspace.
 

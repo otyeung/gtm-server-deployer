@@ -69,8 +69,13 @@ variable "enable_preview_server" {
 
 variable "use_https" {
   type        = bool
-  description = "Whether HTTPS endpoints should be used."
+  description = "Whether HTTPS endpoints should be used. Cloud Run HTTPS is always enabled in this MVP."
   default     = true
+
+  validation {
+    condition     = var.use_https
+    error_message = "use_https must remain true because Cloud Run HTTPS is always enabled in this MVP module."
+  }
 }
 
 variable "use_managed_ssl" {

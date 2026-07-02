@@ -18,6 +18,6 @@ export function getWorkspacePaths(rootDir = process.cwd()): WorkspacePaths {
     settingsFile: path.join(workspaceDir, "settings.json"),
     tfvarsFile: path.join(workspaceDir, "terraform.tfvars.json"),
     logFile: path.join(logsDir, "deployment.log"),
-    outputsFile: path.join(workspaceDir, "outputs.json")
+    outputsFile: path.join(workspaceDir, "outputs.json"),
   };
 }

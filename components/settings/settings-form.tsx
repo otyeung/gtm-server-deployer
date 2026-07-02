@@ -26,13 +26,11 @@ type SettingsRequestResult = {
   error: SettingsRequestError | null;
 };
 
-type FeedbackState =
-  | {
-      tone: "success" | "error";
-      summary: string;
-      detail?: string;
-    }
-  | null;
+type FeedbackState = {
+  tone: "success" | "error";
+  summary: string;
+  detail?: string;
+} | null;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -60,13 +58,16 @@ function getFieldErrors(value: unknown): FieldErrorMap {
 
   const fieldErrors = value.fieldErrors as Record<string, unknown>;
 
-  return (Object.keys(fieldErrors) as SettingsField[]).reduce<FieldErrorMap>((accumulator, field) => {
-    if (isStringArray(fieldErrors[field])) {
-      accumulator[field] = fieldErrors[field];
-    }
+  return (Object.keys(fieldErrors) as SettingsField[]).reduce<FieldErrorMap>(
+    (accumulator, field) => {
+      if (isStringArray(fieldErrors[field])) {
+        accumulator[field] = fieldErrors[field];
+      }
 
-    return accumulator;
-  }, {});
+      return accumulator;
+    },
+    {},
+  );
 }
 
 function getRequestError(response: Response, payload: unknown): SettingsRequestError {
@@ -86,7 +87,7 @@ function getRequestError(response: Response, payload: unknown): SettingsRequestE
 
   return {
     detail: `Request failed with status ${response.status}.`,
-    fieldErrors: {}
+    fieldErrors: {},
   };
 }
 
@@ -116,8 +117,8 @@ async function requestSettings(
         settings: null,
         error: {
           detail: "Response did not include valid settings.",
-          fieldErrors: {}
-        }
+          fieldErrors: {},
+        },
       };
     }
 
@@ -127,8 +128,8 @@ async function requestSettings(
       settings: null,
       error: {
         detail: error instanceof Error ? error.message : "Unknown error",
-        fieldErrors: {}
-      }
+        fieldErrors: {},
+      },
     };
   }
 }
@@ -170,7 +171,7 @@ export function SettingsForm() {
       setFeedback({
         tone: "error",
         summary: "/api/settings could not be loaded. Check the local settings API, then try again.",
-        detail: result.error?.detail ?? undefined
+        detail: result.error?.detail ?? undefined,
       });
     }
 
@@ -185,7 +186,7 @@ export function SettingsForm() {
     const result = await requestSettings("/api/settings", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(settings)
+      body: JSON.stringify(settings),
     });
 
     if (result.settings) {
@@ -199,17 +200,20 @@ export function SettingsForm() {
     setFeedback({
       tone: "error",
       summary: "/api/settings could not be saved. Check the local settings API, then try again.",
-      detail: result.error?.detail ?? undefined
+      detail: result.error?.detail ?? undefined,
     });
   }
 
   return (
     <Card className="max-w-3xl overflow-hidden border-slate-900 bg-white p-0">
       <div className="border-b border-slate-200 bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.9)_60%,rgba(37,99,235,0.74))] px-6 py-6 text-white">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-200">Local toolchain</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-200">
+          Local toolchain
+        </p>
         <h2 className="mt-3 text-2xl font-semibold tracking-tight">Binary path settings</h2>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-          Override Terraform, gcloud, and Docker executable paths when your workstation differs from the default shell environment.
+          Override Terraform, gcloud, and Docker executable paths when your workstation differs from
+          the default shell environment.
         </p>
       </div>
       <div className="space-y-5 p-6">
@@ -276,7 +280,9 @@ export function SettingsForm() {
           </Button>
           {feedback ? (
             <div
-              className={feedback.tone === "error" ? "text-sm text-red-700" : "text-sm text-slate-600"}
+              className={
+                feedback.tone === "error" ? "text-sm text-red-700" : "text-sm text-slate-600"
+              }
               role={feedback.tone === "error" ? "alert" : undefined}
             >
               <p>{feedback.summary}</p>

@@ -24,8 +24,8 @@ describe("StatusDashboard", () => {
 
         return Response.json({
           outputs: {
-            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
-          }
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" },
+          },
         });
       }),
     );
@@ -54,10 +54,11 @@ describe("StatusDashboard", () => {
                 category: "terraform_failed",
                 phase: "failed",
                 message: "Terraform apply failed.",
-                remediation: "Review the Terraform log excerpt, fix the reported issue, then run the failed step again.",
-                logExcerpt: "Error: resource creation timed out\n\nExit code: 1"
-              }
-            }
+                remediation:
+                  "Review the Terraform log excerpt, fix the reported issue, then run the failed step again.",
+                logExcerpt: "Error: resource creation timed out\n\nExit code: 1",
+              },
+            },
           });
         }
 
@@ -67,8 +68,8 @@ describe("StatusDashboard", () => {
 
         return Response.json({
           outputs: {
-            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
-          }
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" },
+          },
         });
       }),
     );
@@ -97,10 +98,7 @@ describe("StatusDashboard", () => {
 
     await user.click(button);
 
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/destroy",
-      expect.objectContaining({ method: "POST" }),
-    );
+    expect(fetch).toHaveBeenCalledWith("/api/destroy", expect.objectContaining({ method: "POST" }));
   });
 
   it("shows a retryable error when destroy returns a non-OK response", async () => {
@@ -124,8 +122,8 @@ describe("StatusDashboard", () => {
 
         return Response.json({
           outputs: {
-            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
-          }
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" },
+          },
         });
       }),
     );
@@ -161,8 +159,8 @@ describe("StatusDashboard", () => {
 
         return Response.json({
           outputs: {
-            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
-          }
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" },
+          },
         });
       }),
     );
@@ -203,14 +201,74 @@ describe("StatusDashboard", () => {
 
     expect(await screen.findAllByText("idle")).toHaveLength(2);
     expect(screen.getByText("No logs yet.")).toBeInTheDocument();
-    expect(screen.getByText("Terraform outputs will appear here after plan or apply completes.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Terraform outputs will appear here after plan or apply completes."),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         /Status dashboard could not be refreshed\. Check the deployment APIs, then try again\./,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/\/api\/status: Unable to read deployment state\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/\/api\/status: Unable to read deployment state\./),
+    ).toBeInTheDocument();
     expect(screen.getByText(/\/api\/logs: Unable to read logs\./)).toBeInTheDocument();
     expect(screen.getByText(/\/api\/output: Unable to read outputs\./)).toBeInTheDocument();
+  });
+
+  it("refreshes the dashboard when the user clicks Refresh", async () => {
+    const user = userEvent.setup();
+    let statusCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+
+        if (url === "/api/status") {
+          statusCalls += 1;
+          return Response.json({
+            state: {
+              phase: statusCalls > 1 ? "applied" : "planning",
+              activeOperation: statusCalls > 1 ? null : "plan",
+              error: null,
+            },
+          });
+        }
+
+        if (url === "/api/logs") {
+          return Response.json({ logs: statusCalls > 1 ? "Terraform complete" : "Planning..." });
+        }
+
+        if (url === "/api/output") {
+          return Response.json({
+            outputs:
+              statusCalls > 1
+                ? {
+                    server_url: {
+                      sensitive: false,
+                      type: "string",
+                      value: "https://server.run.app",
+                    },
+                  }
+                : {},
+          });
+        }
+
+        if (url === "/api/destroy") {
+          return Response.json({ ok: init?.method === "POST" });
+        }
+
+        return Response.json({ ok: true });
+      }),
+    );
+
+    render(<StatusDashboard />);
+
+    expect(await screen.findByText("planning")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(await screen.findByText("applied")).toBeInTheDocument();
+    expect(await screen.findByText("Terraform complete")).toBeInTheDocument();
   });
 });

@@ -9,13 +9,18 @@ export default function SettingsPage() {
         <section className="mb-8 grid gap-6 rounded-[2rem] border border-slate-200 bg-white/85 p-8 shadow-[0_30px_70px_-45px_rgba(15,23,42,0.55)] backdrop-blur lg:grid-cols-[1.15fr_0.85fr]">
           <div>
             <Badge>Workstation config</Badge>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">Settings</h1>
+            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+              Settings
+            </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-              Configure the local binary paths that power the Terraform control plane when your shell PATH differs across machines.
+              Configure the local binary paths that power the Terraform control plane when your
+              shell PATH differs across machines.
             </p>
           </div>
           <div className="rounded-[1.75rem] border border-slate-900 bg-slate-950 p-6 text-slate-100">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-300">Managed tools</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-300">
+              Managed tools
+            </p>
             <ul className="mt-4 space-y-4 text-sm leading-6 text-slate-300">
               <li>Terraform CLI path override</li>
               <li>Google Cloud SDK path override</li>

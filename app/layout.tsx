@@ -4,7 +4,7 @@ import { Navbar } from "@/components/layout/navbar";
 
 export const metadata: Metadata = {
   title: "gtm-server-deployer",
-  description: "Local-first GTM Server-Side tagging infrastructure deployment tool"
+  description: "Local-first GTM Server-Side tagging infrastructure deployment tool",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

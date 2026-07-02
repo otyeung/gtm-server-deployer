@@ -16,7 +16,7 @@ export function ProviderCard({
   featured = false,
   href,
   name,
-  status
+  status,
 }: ProviderCardProps) {
   return (
     <Link href={href} className="group block">
@@ -28,12 +28,22 @@ export function ProviderCard({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className={cn("text-lg font-semibold tracking-tight", featured && "text-white")}>{name}</p>
-            <p className={cn("mt-2 text-sm leading-6", featured ? "text-slate-300" : "text-slate-600")}>
+            <p className={cn("text-lg font-semibold tracking-tight", featured && "text-white")}>
+              {name}
+            </p>
+            <p
+              className={cn(
+                "mt-2 text-sm leading-6",
+                featured ? "text-slate-300" : "text-slate-600",
+              )}
+            >
               {description}
             </p>
           </div>
-          <Badge variant={featured ? "neutral" : "primary"} className={featured ? "border-slate-700 bg-slate-900 text-slate-200" : ""}>
+          <Badge
+            variant={featured ? "neutral" : "primary"}
+            className={featured ? "border-slate-700 bg-slate-900 text-slate-200" : ""}
+          >
             {status}
           </Badge>
         </div>

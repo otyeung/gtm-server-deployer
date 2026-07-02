@@ -14,9 +14,9 @@ function sanitizeOutputs(outputs: TerraformOutputMap): TerraformOutputMap {
       key,
       {
         ...output,
-        value: output.sensitive ? "[REDACTED]" : output.value
-      }
-    ])
+        value: output.sensitive ? "[REDACTED]" : output.value,
+      },
+    ]),
   );
 }
 

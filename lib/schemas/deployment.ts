@@ -26,15 +26,19 @@ export const deploymentInputSchema = z
       .trim()
       .regex(/^$|^([a-z0-9-]+\.)+[a-z]{2,}$/i, "Use a valid domain name")
       .default(""),
-    enableCloudDns: z.boolean().default(false)
+    enableCloudDns: z.boolean().default(false),
   })
   .refine((value) => value.maxInstances >= value.minInstances, {
     path: ["maxInstances"],
-    message: "Max instances must be greater than or equal to min instances"
+    message: "Max instances must be greater than or equal to min instances",
+  })
+  .refine((value) => value.useHttps, {
+    path: ["useHttps"],
+    message: "Cloud Run HTTPS is always enabled in the MVP.",
   })
   .refine((value) => !value.enableCloudDns || value.customDomain.length > 0, {
     path: ["enableCloudDns"],
-    message: "Cloud DNS automation requires a custom domain"
+    message: "Cloud DNS automation requires a custom domain",
   });
 
 export type DeploymentInput = z.infer<typeof deploymentInputSchema>;
@@ -55,6 +59,6 @@ export function serializeDeploymentInput(input: unknown): string | null {
 export function sanitizeDeploymentInputForReview(input: DeploymentInput): DeploymentReview {
   return {
     ...input,
-    gtmContainerConfig: "[REDACTED]"
+    gtmContainerConfig: "[REDACTED]",
   };
 }

@@ -12,7 +12,7 @@ describe("normalizeError", () => {
         category: "missing_binary",
         phase: "planning",
         message: "Terraform binary was not found",
-        remediation: "Install Terraform or configure the Terraform path in Settings."
+        remediation: "Install Terraform or configure the Terraform path in Settings.",
       }),
       "planning",
     );
@@ -33,7 +33,7 @@ describe("normalizeError", () => {
         command: "apply",
         exitCode: 1,
         stdout: "",
-        stderr: "Error: Permission denied by IAM policy"
+        stderr: "Error: Permission denied by IAM policy",
       }),
       "applying",
     );

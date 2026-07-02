@@ -16,7 +16,7 @@ const reviewFields: Array<{ key: keyof DeploymentReview; label: string }> = [
   { key: "useManagedSsl", label: "Managed SSL" },
   { key: "customDomain", label: "Custom domain" },
   { key: "enableCloudDns", label: "Cloud DNS automation" },
-  { key: "gtmContainerConfig", label: "GTM container config" }
+  { key: "gtmContainerConfig", label: "GTM container config" },
 ];
 
 function formatReviewValue(value: DeploymentReview[keyof DeploymentReview]) {
@@ -46,7 +46,9 @@ export function ReviewSummary({ review }: { review: DeploymentReview }) {
       <dl className="mt-6 grid gap-4 sm:grid-cols-2">
         {reviewFields.map(({ key, label }) => (
           <div key={key} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-            <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</dt>
+            <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+              {label}
+            </dt>
             <dd className="mt-2 break-words text-sm font-medium text-slate-100">
               {formatReviewValue(review[key])}
             </dd>

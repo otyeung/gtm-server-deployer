@@ -1,12 +1,5 @@
 export type DeploymentPhase =
-  | "idle"
-  | "planning"
-  | "planned"
-  | "applying"
-  | "applied"
-  | "destroying"
-  | "destroyed"
-  | "failed";
+  "idle" | "planning" | "planned" | "applying" | "applied" | "destroying" | "destroyed" | "failed";
 
 export type DeploymentOperation = "plan" | "apply" | "destroy";
 
@@ -36,6 +29,7 @@ export type DeploymentState = {
   startedAt: string | null;
   updatedAt: string | null;
   lastSuccessfulPlanAt: string | null;
+  lastSuccessfulPlanId: string | null;
   error: DeploymentError | null;
 };
 
@@ -71,5 +65,6 @@ export const EMPTY_DEPLOYMENT_STATE: DeploymentState = {
   startedAt: null,
   updatedAt: null,
   lastSuccessfulPlanAt: null,
-  error: null
+  lastSuccessfulPlanId: null,
+  error: null,
 };

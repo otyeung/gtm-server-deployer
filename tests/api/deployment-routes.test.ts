@@ -11,12 +11,12 @@ const { engine } = vi.hoisted(() => ({
     destroy: vi.fn(),
     getStatus: vi.fn(),
     getLogs: vi.fn(),
-    getOutputs: vi.fn()
-  } satisfies DeploymentEngine
+    getOutputs: vi.fn(),
+  } satisfies DeploymentEngine,
 }));
 
 vi.mock("@/lib/deployment/engine-instance", () => ({
-  getDeploymentEngine: () => engine
+  getDeploymentEngine: () => engine,
 }));
 
 const validInput = {
@@ -34,7 +34,7 @@ const validInput = {
   useHttps: true,
   useManagedSsl: true,
   customDomain: "",
-  enableCloudDns: false
+  enableCloudDns: false,
 } as const;
 
 const state: DeploymentState = {
@@ -45,15 +45,16 @@ const state: DeploymentState = {
   startedAt: "2026-07-02T00:00:00.000Z",
   updatedAt: "2026-07-02T00:01:00.000Z",
   lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-  error: null
+  lastSuccessfulPlanId: "plan-123",
+  error: null,
 };
 
 const outputs: TerraformOutputMap = {
   service_url: {
     sensitive: false,
     type: "string",
-    value: "https://example.com"
-  }
+    value: "https://example.com",
+  },
 };
 
 describe("deployment API routes", () => {
@@ -69,14 +70,56 @@ describe("deployment API routes", () => {
     const response = await route.POST(
       new Request("http://localhost/api/deploy/plan", {
         method: "POST",
-        body: JSON.stringify(validInput)
-      })
+        headers: {
+          origin: "http://localhost",
+        },
+        body: JSON.stringify(validInput),
+      }),
     );
 
     expect(route.runtime).toBe("nodejs");
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ state });
+    await expect(response.json()).resolves.toEqual({ state, planId: "plan-123" });
     expect(engine.plan).toHaveBeenCalledWith(validInput);
+  });
+
+  it("accepts same-origin referer headers for plan requests", async () => {
+    vi.mocked(engine.plan).mockResolvedValue(state);
+    const route = await import("@/app/api/deploy/plan/route");
+
+    const response = await route.POST(
+      new Request("http://localhost/api/deploy/plan", {
+        method: "POST",
+        headers: {
+          referer: "http://localhost/deploy",
+        },
+        body: JSON.stringify(validInput),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ state, planId: "plan-123" });
+    expect(engine.plan).toHaveBeenCalledWith(validInput);
+  });
+
+  it("rejects cross-origin plan requests", async () => {
+    const route = await import("@/app/api/deploy/plan/route");
+
+    const response = await route.POST(
+      new Request("http://localhost/api/deploy/plan", {
+        method: "POST",
+        headers: {
+          origin: "https://evil.example",
+        },
+        body: JSON.stringify(validInput),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "Cross-origin browser requests are not allowed.",
+    });
+    expect(engine.plan).not.toHaveBeenCalled();
   });
 
   it("returns a 400 response when plan input is invalid", async () => {
@@ -85,8 +128,8 @@ describe("deployment API routes", () => {
     const response = await route.POST(
       new Request("http://localhost/api/deploy/plan", {
         method: "POST",
-        body: JSON.stringify({ ...validInput, projectId: "bad" })
-      })
+        body: JSON.stringify({ ...validInput, projectId: "bad" }),
+      }),
     );
 
     expect(response.status).toBe(400);
@@ -94,10 +137,10 @@ describe("deployment API routes", () => {
       expect.objectContaining({
         error: expect.objectContaining({
           fieldErrors: expect.objectContaining({
-            projectId: expect.arrayContaining(["Project ID must be at least 6 characters"])
-          })
-        })
-      })
+            projectId: expect.arrayContaining(["Project ID must be at least 6 characters"]),
+          }),
+        }),
+      }),
     );
     expect(engine.plan).not.toHaveBeenCalled();
   });
@@ -108,13 +151,13 @@ describe("deployment API routes", () => {
     const response = await route.POST(
       new Request("http://localhost/api/deploy/plan", {
         method: "POST",
-        body: "{not-json"
-      })
+        body: "{not-json",
+      }),
     );
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Request body must be valid JSON."
+      error: "Request body must be valid JSON.",
     });
     expect(engine.plan).not.toHaveBeenCalled();
   });
@@ -126,8 +169,8 @@ describe("deployment API routes", () => {
     const response = await route.POST(
       new Request("http://localhost/api/deploy/plan", {
         method: "POST",
-        body: JSON.stringify(validInput)
-      })
+        body: JSON.stringify(validInput),
+      }),
     );
 
     expect(response.status).toBe(500);
@@ -138,24 +181,95 @@ describe("deployment API routes", () => {
     vi.mocked(engine.apply).mockResolvedValue(state);
     const route = await import("@/app/api/deploy/apply/route");
 
-    const response = await route.POST();
+    const response = await route.POST(
+      new Request("http://localhost/api/deploy/apply", {
+        method: "POST",
+        body: JSON.stringify({ planId: "plan-123" }),
+      }),
+    );
 
     expect(route.runtime).toBe("nodejs");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ state });
-    expect(engine.apply).toHaveBeenCalledTimes(1);
+    expect(engine.apply).toHaveBeenCalledWith("plan-123");
+  });
+
+  it("rejects missing plan IDs before apply", async () => {
+    const route = await import("@/app/api/deploy/apply/route");
+
+    const response = await route.POST(
+      new Request("http://localhost/api/deploy/apply", {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          fieldErrors: expect.objectContaining({
+            planId: expect.any(Array),
+          }),
+        }),
+      }),
+    );
+    expect(engine.apply).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-origin apply requests", async () => {
+    const route = await import("@/app/api/deploy/apply/route");
+
+    const response = await route.POST(
+      new Request("http://localhost/api/deploy/apply", {
+        method: "POST",
+        headers: {
+          origin: "https://evil.example",
+        },
+        body: JSON.stringify({ planId: "plan-123" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "Cross-origin browser requests are not allowed.",
+    });
+    expect(engine.apply).not.toHaveBeenCalled();
   });
 
   it("destroys a deployment", async () => {
     vi.mocked(engine.destroy).mockResolvedValue({ ...state, phase: "destroyed" });
     const route = await import("@/app/api/destroy/route");
 
-    const response = await route.POST();
+    const response = await route.POST(
+      new Request("http://localhost/api/destroy", {
+        method: "POST",
+      }),
+    );
 
     expect(route.runtime).toBe("nodejs");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ state: { ...state, phase: "destroyed" } });
     expect(engine.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects cross-origin destroy requests", async () => {
+    const route = await import("@/app/api/destroy/route");
+
+    const response = await route.POST(
+      new Request("http://localhost/api/destroy", {
+        method: "POST",
+        headers: {
+          referer: "https://evil.example/status",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "Cross-origin browser requests are not allowed.",
+    });
+    expect(engine.destroy).not.toHaveBeenCalled();
   });
 
   it("returns current status", async () => {
@@ -202,13 +316,13 @@ describe("deployment API routes", () => {
       service_url: {
         sensitive: false,
         type: "string",
-        value: "https://example.com"
+        value: "https://example.com",
       },
       admin_token: {
         sensitive: true,
         type: "string",
-        value: "secret-token"
-      }
+        value: "secret-token",
+      },
     });
     const route = await import("@/app/api/output/route");
 
@@ -220,14 +334,14 @@ describe("deployment API routes", () => {
         service_url: {
           sensitive: false,
           type: "string",
-          value: "https://example.com"
+          value: "https://example.com",
         },
         admin_token: {
           sensitive: true,
           type: "string",
-          value: "[REDACTED]"
-        }
-      }
+          value: "[REDACTED]",
+        },
+      },
     });
   });
 });

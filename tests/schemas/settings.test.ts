@@ -10,12 +10,12 @@ describe("settingsSchema", () => {
       settingsSchema.parse({
         terraformPath: "/opt/bin/terraform",
         gcloudPath: "/opt/bin/gcloud",
-        dockerPath: "/opt/bin/docker"
-      })
+        dockerPath: "/opt/bin/docker",
+      }),
     ).toEqual({
       terraformPath: "/opt/bin/terraform",
       gcloudPath: "/opt/bin/gcloud",
-      dockerPath: "/opt/bin/docker"
+      dockerPath: "/opt/bin/docker",
     });
   });
 });

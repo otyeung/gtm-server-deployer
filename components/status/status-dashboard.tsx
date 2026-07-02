@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { DeploymentState, TerraformOutputMap } from "@/lib/deployment/types";
 import { DestroyDialog } from "./destroy-dialog";
@@ -56,7 +57,7 @@ async function fetchSegment<T>({
   endpoint,
   fallback,
   validate,
-  select
+  select,
 }: {
   endpoint: string;
   fallback: T;
@@ -70,14 +71,14 @@ async function fetchSegment<T>({
     if (!response.ok) {
       return {
         value: fallback,
-        error: `${endpoint}: ${getResponseError(response, payload)}`
+        error: `${endpoint}: ${getResponseError(response, payload)}`,
       };
     }
 
     if (!validate(payload)) {
       return {
         value: fallback,
-        error: `${endpoint}: Response payload was invalid.`
+        error: `${endpoint}: Response payload was invalid.`,
       };
     }
 
@@ -85,31 +86,33 @@ async function fetchSegment<T>({
   } catch (error) {
     return {
       value: fallback,
-      error: `${endpoint}: ${error instanceof Error ? error.message : "Unknown error"}`
+      error: `${endpoint}: ${error instanceof Error ? error.message : "Unknown error"}`,
     };
   }
 }
 
-async function fetchSnapshot(previous: Omit<DashboardSnapshot, "errors">): Promise<DashboardSnapshot> {
+async function fetchSnapshot(
+  previous: Omit<DashboardSnapshot, "errors">,
+): Promise<DashboardSnapshot> {
   const [statusResult, logsResult, outputsResult] = await Promise.all([
     fetchSegment({
       endpoint: "/api/status",
       fallback: previous.state,
       validate: isStatusPayload,
-      select: (payload) => payload.state
+      select: (payload) => payload.state,
     }),
     fetchSegment({
       endpoint: "/api/logs",
       fallback: previous.logs,
       validate: isLogsPayload,
-      select: (payload) => payload.logs
+      select: (payload) => payload.logs,
     }),
     fetchSegment({
       endpoint: "/api/output",
       fallback: previous.outputs,
       validate: isOutputsPayload,
-      select: (payload) => payload.outputs
-    })
+      select: (payload) => payload.outputs,
+    }),
   ]);
 
   return {
@@ -118,7 +121,7 @@ async function fetchSnapshot(previous: Omit<DashboardSnapshot, "errors">): Promi
     outputs: outputsResult.value,
     errors: [statusResult.error, logsResult.error, outputsResult.error].filter(
       (error): error is string => error !== null,
-    )
+    ),
   };
 }
 
@@ -127,13 +130,20 @@ export function StatusDashboard() {
   const [logs, setLogs] = useState("");
   const [outputs, setOutputs] = useState<TerraformOutputMap>({});
   const [errors, setErrors] = useState<string[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   async function refresh() {
-    const snapshot = await fetchSnapshot({ state, logs, outputs });
-    setState(snapshot.state);
-    setLogs(snapshot.logs);
-    setOutputs(snapshot.outputs);
-    setErrors(snapshot.errors);
+    setIsRefreshing(true);
+
+    try {
+      const snapshot = await fetchSnapshot({ state, logs, outputs });
+      setState(snapshot.state);
+      setLogs(snapshot.logs);
+      setOutputs(snapshot.outputs);
+      setErrors(snapshot.errors);
+    } finally {
+      setIsRefreshing(false);
+    }
   }
 
   useEffect(() => {
@@ -143,7 +153,7 @@ export function StatusDashboard() {
       const snapshot = await fetchSnapshot({
         state: { phase: "idle" },
         logs: "",
-        outputs: {}
+        outputs: {},
       });
       if (!isActive) {
         return;
@@ -172,27 +182,43 @@ export function StatusDashboard() {
               <Badge className="border-slate-700 bg-slate-900/80 text-slate-200" variant="neutral">
                 Terraform execution
               </Badge>
+              <Button
+                className="border border-slate-700 bg-slate-900/80 text-slate-100 hover:bg-slate-800"
+                disabled={isRefreshing}
+                onClick={() => {
+                  void refresh();
+                }}
+                type="button"
+                variant="secondary"
+              >
+                {isRefreshing ? "Refreshing…" : "Refresh"}
+              </Button>
             </div>
             <h1 className="mt-4 text-2xl font-semibold tracking-tight">Deployment status</h1>
             <p className="mt-3 text-sm leading-6 text-slate-300">
-              Observe the current deployment phase, investigate logs, inspect outputs, or trigger a controlled destroy.
+              Observe the current deployment phase, investigate logs, inspect outputs, or trigger a
+              controlled destroy.
             </p>
           </div>
           <div className="grid gap-4 p-6 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Current phase</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Current phase
+              </p>
               <p className="mt-2 text-lg font-semibold text-slate-950">{state.phase ?? "idle"}</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Active operation</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{state.activeOperation ?? "idle"}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Active operation
+              </p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">
+                {state.activeOperation ?? "idle"}
+              </p>
             </div>
             {state.error ? (
               <div className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                 <p className="font-medium">{state.error.message}</p>
-                {state.error.remediation ? (
-                  <p className="mt-2">{state.error.remediation}</p>
-                ) : null}
+                {state.error.remediation ? <p className="mt-2">{state.error.remediation}</p> : null}
                 {state.error.logExcerpt ? (
                   <pre className="mt-3 overflow-x-auto rounded-xl border border-red-200 bg-red-100/70 p-3 font-mono text-xs leading-5 text-red-900 whitespace-pre-wrap">
                     {state.error.logExcerpt}
@@ -206,7 +232,8 @@ export function StatusDashboard() {
                 role="alert"
               >
                 <p className="font-semibold">
-                  Status dashboard could not be refreshed. Check the deployment APIs, then try again.
+                  Status dashboard could not be refreshed. Check the deployment APIs, then try
+                  again.
                 </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   {errors.map((error) => (

@@ -6,7 +6,7 @@ import {
   type DeploymentLog,
   type DeploymentState,
   type TerraformOutputMap,
-  type WorkspacePaths
+  type WorkspacePaths,
 } from "./types";
 
 async function readJson<T>(filePath: string, fallback: T): Promise<T> {
@@ -35,7 +35,15 @@ export async function ensureWorkspace(paths: WorkspacePaths): Promise<void> {
 }
 
 export async function readDeploymentState(paths: WorkspacePaths): Promise<DeploymentState> {
-  return readJson(paths.stateFile, EMPTY_DEPLOYMENT_STATE);
+  const state = await readJson<Partial<DeploymentState>>(paths.stateFile, EMPTY_DEPLOYMENT_STATE);
+
+  return {
+    ...EMPTY_DEPLOYMENT_STATE,
+    ...state,
+    lastSuccessfulPlanId:
+      typeof state.lastSuccessfulPlanId === "string" ? state.lastSuccessfulPlanId : null,
+    error: state.error ?? null,
+  };
 }
 
 export async function writeDeploymentState(
@@ -46,7 +54,10 @@ export async function writeDeploymentState(
   await writeJson(paths.stateFile, state);
 }
 
-export async function appendDeploymentLog(paths: WorkspacePaths, chunk: DeploymentLog): Promise<void> {
+export async function appendDeploymentLog(
+  paths: WorkspacePaths,
+  chunk: DeploymentLog,
+): Promise<void> {
   await ensureWorkspace(paths);
   await writeFile(paths.logFile, `${chunk}\n`, { encoding: "utf8", flag: "a" });
 }
@@ -92,7 +103,7 @@ export async function writeTerraformVars(
     use_https: input.useHttps,
     use_managed_ssl: input.useManagedSsl,
     custom_domain: input.customDomain,
-    enable_cloud_dns: input.enableCloudDns
+    enable_cloud_dns: input.enableCloudDns,
   });
 }
 

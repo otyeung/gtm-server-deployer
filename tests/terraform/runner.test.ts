@@ -43,7 +43,7 @@ describe("runTerraformCommand", () => {
       cwd: process.cwd(),
       sensitiveValues: ["secret-config"],
       onLog,
-      spawnImpl: fakeSpawn(0)
+      spawnImpl: fakeSpawn(0),
     });
 
     expect(result.exitCode).toBe(0);
@@ -58,7 +58,7 @@ describe("runTerraformCommand", () => {
       args: ["-no-color"],
       cwd: process.cwd(),
       sensitiveValues: ["secret-config"],
-      spawnImpl: fakeSpawn(1, ["stdout secret-config"], ["stderr secret-config"])
+      spawnImpl: fakeSpawn(1, ["stdout secret-config"], ["stderr secret-config"]),
     });
 
     await expect(promise).rejects.toBeInstanceOf(TerraformCommandError);
@@ -67,7 +67,7 @@ describe("runTerraformCommand", () => {
       command: "apply",
       exitCode: 1,
       stdout: "stdout [REDACTED]",
-      stderr: "stderr [REDACTED]"
+      stderr: "stderr [REDACTED]",
     });
 
     await expect(promise).rejects.toThrow("Terraform apply failed with exit code 1");
@@ -82,12 +82,15 @@ describe("runTerraformCommand", () => {
       cwd: process.cwd(),
       sensitiveValues: [],
       onLog: vi
-        .fn<Parameters<NonNullable<Parameters<typeof runTerraformCommand>[0]["onLog"]>>, ReturnType<NonNullable<Parameters<typeof runTerraformCommand>[0]["onLog"]>>>()
+        .fn<
+          Parameters<NonNullable<Parameters<typeof runTerraformCommand>[0]["onLog"]>>,
+          ReturnType<NonNullable<Parameters<typeof runTerraformCommand>[0]["onLog"]>>
+        >()
         .mockImplementationOnce(() => {
           throw new Error("sync log failure");
         })
         .mockImplementationOnce(async () => Promise.reject(new Error("async log failure"))),
-      spawnImpl: fakeSpawn(0, ["first chunk", " second chunk"])
+      spawnImpl: fakeSpawn(0, ["first chunk", " second chunk"]),
     });
 
     expect(result.exitCode).toBe(0);
@@ -95,7 +98,7 @@ describe("runTerraformCommand", () => {
     expect(result.logCallbackErrors).toHaveLength(2);
     expect(result.logCallbackErrors.map((error) => error.message)).toEqual([
       "sync log failure",
-      "async log failure"
+      "async log failure",
     ]);
   });
 
@@ -108,7 +111,7 @@ describe("runTerraformCommand", () => {
       cwd: process.cwd(),
       sensitiveValues: ["secret-config"],
       onLog,
-      spawnImpl: fakeSpawn(0, ["prefix secret-", "config suffix"])
+      spawnImpl: fakeSpawn(0, ["prefix secret-", "config suffix"]),
     });
 
     expect(result.stdout).toBe("prefix [REDACTED] suffix");

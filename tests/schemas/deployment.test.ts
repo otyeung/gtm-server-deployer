@@ -1,7 +1,4 @@
-import {
-  deploymentInputSchema,
-  sanitizeDeploymentInputForReview
-} from "@/lib/schemas/deployment";
+import { deploymentInputSchema, sanitizeDeploymentInputForReview } from "@/lib/schemas/deployment";
 
 const validInput = {
   provider: "gcp",
@@ -18,7 +15,7 @@ const validInput = {
   useHttps: true,
   useManagedSsl: true,
   customDomain: "",
-  enableCloudDns: false
+  enableCloudDns: false,
 };
 
 describe("deploymentInputSchema", () => {
@@ -36,6 +33,12 @@ describe("deploymentInputSchema", () => {
 
   it("requires a positive max instance count", () => {
     const result = deploymentInputSchema.safeParse({ ...validInput, maxInstances: 0 });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects disabling HTTPS because Cloud Run HTTPS is always enabled in the MVP", () => {
+    const result = deploymentInputSchema.safeParse({ ...validInput, useHttps: false });
 
     expect(result.success).toBe(false);
   });

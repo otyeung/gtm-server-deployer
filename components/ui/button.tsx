@@ -8,7 +8,7 @@ const variantClasses: Record<ButtonVariant, string> = {
     "bg-blue-600 text-white shadow-[0_14px_30px_-18px_rgba(37,99,235,0.8)] hover:bg-blue-500",
   secondary:
     "border border-slate-700/70 bg-slate-900 text-slate-100 hover:border-blue-400/60 hover:text-white",
-  ghost: "border border-slate-300 bg-white text-slate-900 hover:border-blue-300 hover:bg-slate-50"
+  ghost: "border border-slate-300 bg-white text-slate-900 hover:border-blue-300 hover:bg-slate-50",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

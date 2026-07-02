@@ -33,7 +33,9 @@ function getLogExcerpt(error: unknown): string | undefined {
 
 function getSearchableText(error: unknown): string {
   if (error instanceof TerraformCommandError) {
-    return [error.message, error.stdout, error.stderr].filter((value) => value.length > 0).join("\n");
+    return [error.message, error.stdout, error.stderr]
+      .filter((value) => value.length > 0)
+      .join("\n");
   }
 
   return getMessage(error);
@@ -64,7 +66,7 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
       message,
       logExcerpt,
       remediation:
-        "Verify the active gcloud account has IAM permissions for Cloud Run, Secret Manager, IAM, Compute, Certificate Manager, and Cloud DNS."
+        "Verify the active gcloud account has IAM permissions for Cloud Run, Secret Manager, IAM, Compute, Certificate Manager, and Cloud DNS.",
     };
   }
 
@@ -75,7 +77,7 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
       message,
       logExcerpt,
       remediation:
-        "Open the Google Cloud quota page for the selected project and request quota or choose a smaller region/resource size."
+        "Open the Google Cloud quota page for the selected project and request quota or choose a smaller region/resource size.",
     };
   }
 
@@ -89,7 +91,7 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
       phase,
       message,
       logExcerpt,
-      remediation: "Install Terraform or configure the Terraform binary path in Settings."
+      remediation: "Install Terraform or configure the Terraform binary path in Settings.",
     };
   }
 
@@ -98,6 +100,7 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
     phase,
     message,
     logExcerpt,
-    remediation: "Review the Terraform log excerpt, fix the reported issue, then run the failed step again."
+    remediation:
+      "Review the Terraform log excerpt, fix the reported issue, then run the failed step again.",
   };
 }

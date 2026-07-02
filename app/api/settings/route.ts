@@ -1,7 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getWorkspacePaths } from "@/lib/deployment/paths";
 import { DEFAULT_LOCAL_SETTINGS, settingsSchema } from "@/lib/schemas/settings";
+import { readLocalSettings } from "@/lib/settings/local-settings";
+import { validateSameOriginMutationRequest } from "@/lib/server/same-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +22,7 @@ async function parseJsonBody(request: Request) {
 
 export async function GET() {
   try {
-    const raw = await readFile(getWorkspacePaths().settingsFile, "utf8");
-    return Response.json({ settings: settingsSchema.parse(JSON.parse(raw)) });
+    return Response.json({ settings: await readLocalSettings() });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return Response.json({ settings: DEFAULT_LOCAL_SETTINGS });
@@ -32,6 +33,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const crossOriginResponse = validateSameOriginMutationRequest(request);
+  if (crossOriginResponse) {
+    return crossOriginResponse;
+  }
+
   const json = await parseJsonBody(request);
   if (json === null) {
     return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });

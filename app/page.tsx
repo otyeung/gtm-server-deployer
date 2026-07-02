@@ -7,28 +7,32 @@ const providers = [
   {
     name: "Google Cloud",
     status: "Available in MVP",
-    description: "Cloud Run, Secret Manager, HTTPS, and optional Cloud DNS for GTM server-side tagging.",
+    description:
+      "Cloud Run, Secret Manager, HTTPS, and optional Cloud DNS for GTM server-side tagging.",
     href: "/deploy",
-    featured: true
+    featured: true,
   },
   {
     name: "Azure",
     status: "Future provider",
-    description: "Documented path for translating the same control plane contract to Azure-native resources.",
-    href: "#roadmap"
+    description:
+      "Documented path for translating the same control plane contract to Azure-native resources.",
+    href: "#roadmap",
   },
   {
     name: "AWS",
     status: "Future provider",
-    description: "Reserved for an ECS or App Runner based deploy path using the same review/apply workflow.",
-    href: "#roadmap"
+    description:
+      "Reserved for an ECS or App Runner based deploy path using the same review/apply workflow.",
+    href: "#roadmap",
   },
   {
     name: "Generic Terraform",
     status: "Future provider",
-    description: "A provider-agnostic workspace for teams that already own the target infrastructure baseline.",
-    href: "#roadmap"
-  }
+    description:
+      "A provider-agnostic workspace for teams that already own the target infrastructure baseline.",
+    href: "#roadmap",
+  },
 ];
 
 export default function HomePage() {
@@ -83,6 +87,32 @@ export default function HomePage() {
           {providers.map((provider) => (
             <ProviderCard key={provider.name} {...provider} />
           ))}
+        </section>
+
+        <section
+          className="rounded-[2rem] border border-slate-200 bg-white/90 px-6 py-8 shadow-[0_22px_50px_-30px_rgba(15,23,42,0.28)] backdrop-blur"
+          id="roadmap"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+            Next up
+          </p>
+          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">Roadmap</h2>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <Card className="border-slate-200 bg-slate-50/80 shadow-none">
+              <p className="text-sm font-semibold text-slate-900">Multi-cloud provider expansion</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Add guided Azure, AWS, and generic Terraform entry points without changing the
+                review and apply workflow.
+              </p>
+            </Card>
+            <Card className="border-slate-200 bg-slate-50/80 shadow-none">
+              <p className="text-sm font-semibold text-slate-900">Operator experience</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Ship Cloud Shell bootstrap, drift detection, and CI hooks after the local-first GCP
+                MVP hardening work lands.
+              </p>
+            </Card>
+          </div>
         </section>
       </div>
     </main>

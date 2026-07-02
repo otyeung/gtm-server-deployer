@@ -5,7 +5,7 @@ type BadgeVariant = "primary" | "neutral";
 
 const variantClasses: Record<BadgeVariant, string> = {
   primary: "border border-blue-200 bg-blue-50 text-blue-700",
-  neutral: "border border-slate-200 bg-slate-50 text-slate-600"
+  neutral: "border border-slate-200 bg-slate-50 text-slate-600",
 };
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {

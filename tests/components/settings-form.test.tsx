@@ -9,7 +9,7 @@ describe("SettingsForm", () => {
       "fetch",
       vi.fn(async () =>
         Response.json({
-          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" }
+          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" },
         }),
       ),
     );
@@ -41,7 +41,9 @@ describe("SettingsForm", () => {
     expect(screen.getByDisplayValue("gcloud")).toBeInTheDocument();
     expect(screen.getByDisplayValue("docker")).toBeInTheDocument();
     expect(
-      screen.getByText("/api/settings could not be loaded. Check the local settings API, then try again."),
+      screen.getByText(
+        "/api/settings could not be loaded. Check the local settings API, then try again.",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Unable to load settings.")).toBeInTheDocument();
   });
@@ -56,7 +58,7 @@ describe("SettingsForm", () => {
         }
 
         return Response.json({
-          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" }
+          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" },
         });
       }),
     );
@@ -69,7 +71,9 @@ describe("SettingsForm", () => {
 
     expect(screen.getByDisplayValue("/opt/bin/terraform")).toBeInTheDocument();
     expect(
-      await screen.findByText("/api/settings could not be saved. Check the local settings API, then try again."),
+      await screen.findByText(
+        "/api/settings could not be saved. Check the local settings API, then try again.",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Unable to save settings.")).toBeInTheDocument();
   });
@@ -85,16 +89,16 @@ describe("SettingsForm", () => {
               error: {
                 formErrors: [],
                 fieldErrors: {
-                  terraformPath: ["String must contain at least 1 character(s)"]
-                }
-              }
+                  terraformPath: ["String must contain at least 1 character(s)"],
+                },
+              },
             },
             { status: 400 },
           );
         }
 
         return Response.json({
-          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" }
+          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" },
         });
       }),
     );

@@ -1,6 +1,10 @@
 import "server-only";
 
-import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+  type SpawnOptionsWithoutStdio,
+} from "node:child_process";
 import { REDACTION_MARKER } from "@/lib/deployment/redaction";
 
 export type TerraformCommand = "init" | "plan" | "apply" | "output" | "destroy";
@@ -30,7 +34,10 @@ export type TerraformCommandResult = {
   logCallbackErrors: Error[];
 };
 
-type TerraformCommandErrorOptions = Pick<TerraformCommandResult, "command" | "exitCode" | "stdout" | "stderr">;
+type TerraformCommandErrorOptions = Pick<
+  TerraformCommandResult,
+  "command" | "exitCode" | "stdout" | "stderr"
+>;
 
 function buildLogExcerpt(stdout: string, stderr: string): string {
   const combined = [stderr, stdout]
@@ -125,7 +132,7 @@ export async function runTerraformCommand(
   const child = spawnImpl(options.binaryPath, [options.command, ...options.args], {
     cwd: options.cwd,
     env: { ...process.env, ...options.env },
-    shell: false
+    shell: false,
   });
 
   let stdout = "";
@@ -191,23 +198,22 @@ export async function runTerraformCommand(
       flush("stdout");
       flush("stderr");
 
-      void Promise.all(logWrites)
-        .then(() => {
-          const result = {
-            command: options.command,
-            exitCode: exitCode ?? 1,
-            stdout,
-            stderr,
-            logCallbackErrors
-          };
+      void Promise.all(logWrites).then(() => {
+        const result = {
+          command: options.command,
+          exitCode: exitCode ?? 1,
+          stdout,
+          stderr,
+          logCallbackErrors,
+        };
 
-          if (result.exitCode === 0) {
-            resolve(result);
-            return;
-          }
+        if (result.exitCode === 0) {
+          resolve(result);
+          return;
+        }
 
-          reject(new TerraformCommandError(result));
-        });
+        reject(new TerraformCommandError(result));
+      });
     });
   });
 }

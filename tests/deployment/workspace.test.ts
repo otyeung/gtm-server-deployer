@@ -11,7 +11,7 @@ import {
   readTerraformOutputs,
   writeDeploymentState,
   writeTerraformOutputs,
-  writeTerraformVars
+  writeTerraformVars,
 } from "@/lib/deployment/workspace";
 import type { DeploymentState, TerraformOutputMap } from "@/lib/deployment/types";
 
@@ -47,7 +47,8 @@ describe("workspace", () => {
       startedAt: "2026-07-02T00:00:00.000Z",
       updatedAt: "2026-07-02T00:01:00.000Z",
       lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-      error: null
+      lastSuccessfulPlanId: "plan-123",
+      error: null,
     };
 
     await ensureWorkspace(paths);
@@ -60,7 +61,7 @@ describe("workspace", () => {
     const paths = getWorkspacePaths(rootDir);
     const outputs: TerraformOutputMap = {
       service_url: { sensitive: false, type: "string", value: "https://example.com" },
-      admin_token: { sensitive: true, type: "string", value: "secret" }
+      admin_token: { sensitive: true, type: "string", value: "secret" },
     };
 
     await ensureWorkspace(paths);
@@ -79,7 +80,7 @@ describe("workspace", () => {
       useHttps: true,
       useManagedSsl: true,
       customDomain: "",
-      enableCloudDns: false
+      enableCloudDns: false,
     });
     await writeTerraformOutputs(paths, outputs);
 

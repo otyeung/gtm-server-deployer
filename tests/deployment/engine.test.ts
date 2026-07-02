@@ -10,7 +10,11 @@ import { createDeploymentEngine } from "@/lib/deployment/engine";
 import { getWorkspacePaths } from "@/lib/deployment/paths";
 import type { DeploymentInput } from "@/lib/schemas/deployment";
 import type { TerraformCommandOptions, TerraformCommandResult } from "@/lib/terraform/runner";
-import { readDeploymentState, writeDeploymentState, writeTerraformOutputs } from "@/lib/deployment/workspace";
+import {
+  readDeploymentState,
+  writeDeploymentState,
+  writeTerraformOutputs,
+} from "@/lib/deployment/workspace";
 import type { TerraformOutputMap } from "@/lib/deployment/types";
 
 const input: DeploymentInput = {
@@ -28,7 +32,7 @@ const input: DeploymentInput = {
   useHttps: true,
   useManagedSsl: true,
   customDomain: "",
-  enableCloudDns: false
+  enableCloudDns: false,
 };
 
 let rootDir: string;
@@ -58,7 +62,7 @@ beforeEach(async () => {
   spawnedProcesses = [];
   await mkdir(rootDir, { recursive: true });
   await mkdir(terraformModuleDir, { recursive: true });
-  await writeFile(path.join(terraformModuleDir, "main.tf"), 'terraform {}\n', "utf8");
+  await writeFile(path.join(terraformModuleDir, "main.tf"), "terraform {}\n", "utf8");
 });
 
 afterEach(async () => {
@@ -78,11 +82,13 @@ function parseLockTarget(target: string): LockTargetMetadata | null {
 
   const parsed = JSON.parse(decodeURIComponent(target.slice(3))) as Partial<LockTargetMetadata>;
   if (
-    (parsed.operation !== "plan" && parsed.operation !== "apply" && parsed.operation !== "destroy")
-    || !Number.isInteger(parsed.pid)
-    || typeof parsed.ownerId !== "string"
-    || typeof parsed.processStartedAt !== "string"
-    || typeof parsed.acquiredAt !== "string"
+    (parsed.operation !== "plan" &&
+      parsed.operation !== "apply" &&
+      parsed.operation !== "destroy") ||
+    !Number.isInteger(parsed.pid) ||
+    typeof parsed.ownerId !== "string" ||
+    typeof parsed.processStartedAt !== "string" ||
+    typeof parsed.acquiredAt !== "string"
   ) {
     return null;
   }
@@ -102,13 +108,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths: getWorkspacePaths(rootDir),
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     const state = await engine.plan(input);
@@ -120,30 +126,37 @@ describe("createDeploymentEngine", () => {
   it("requires a successful plan before apply", async () => {
     const engine = createDeploymentEngine({ paths: getWorkspacePaths(rootDir), runner: vi.fn() });
 
-    await expect(engine.apply()).rejects.toThrow("Run a successful Terraform plan before apply.");
+    await expect(engine.apply("missing-plan-id")).rejects.toThrow(
+      "Run a successful Terraform plan before apply.",
+    );
   });
 
-  it("runs apply after a successful plan", async () => {
+  it("runs apply after a successful plan with the matching plan ID", async () => {
     const runner = vi.fn(
       async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
         command: options.command,
         exitCode: 0,
         stdout: options.command === "output" ? "{}" : "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths: getWorkspacePaths(rootDir),
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
-    await engine.plan(input);
-    const state = await engine.apply();
+    const plannedState = await engine.plan(input);
+    const state = await engine.apply(plannedState.lastSuccessfulPlanId!);
 
     expect(state.phase).toBe("applied");
-    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan", "apply", "output"]);
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual([
+      "init",
+      "plan",
+      "apply",
+      "output",
+    ]);
   });
 
   it("rehydrates sensitive values for apply after process restart", async () => {
@@ -154,20 +167,22 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const planningEngine = createDeploymentEngine({
       paths,
       runner: planningRunner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
-    await planningEngine.plan(input);
+    const plannedState = await planningEngine.plan(input);
 
     const restartedRunner = vi.fn(
       async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
-        const emittedValue = options.sensitiveValues.includes(input.gtmContainerConfig) ? "[REDACTED]" : input.gtmContainerConfig;
+        const emittedValue = options.sensitiveValues.includes(input.gtmContainerConfig)
+          ? "[REDACTED]"
+          : input.gtmContainerConfig;
         await options.onLog?.(`${options.command}:${emittedValue}`);
 
         return {
@@ -175,27 +190,97 @@ describe("createDeploymentEngine", () => {
           exitCode: 0,
           stdout: options.command === "output" ? "{}" : "",
           stderr: "",
-          logCallbackErrors: []
+          logCallbackErrors: [],
         };
       },
     );
     const restartedEngine = createDeploymentEngine({
       paths,
       runner: restartedRunner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
-    const state = await restartedEngine.apply();
+    const state = await restartedEngine.apply(plannedState.lastSuccessfulPlanId!);
     const logs = await restartedEngine.getLogs();
 
     expect(state.phase).toBe("applied");
-    expect(restartedRunner.mock.calls.find(([call]) => call.command === "apply")?.[0].sensitiveValues).toEqual([
-      input.gtmContainerConfig
-    ]);
+    expect(
+      restartedRunner.mock.calls.find(([call]) => call.command === "apply")?.[0].sensitiveValues,
+    ).toEqual([input.gtmContainerConfig]);
     expect(JSON.stringify(state)).not.toContain(input.gtmContainerConfig);
-    expect(JSON.stringify(await readDeploymentState(paths))).not.toContain(input.gtmContainerConfig);
+    expect(JSON.stringify(await readDeploymentState(paths))).not.toContain(
+      input.gtmContainerConfig,
+    );
     expect(logs).toContain("[REDACTED]");
     expect(logs).not.toContain(input.gtmContainerConfig);
+  });
+
+  it("rejects stale plan IDs after a newer successful plan overwrites them", async () => {
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: options.command === "output" ? "{}" : "",
+        stderr: "",
+        logCallbackErrors: [],
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths: getWorkspacePaths(rootDir),
+      runner,
+      terraformModuleDir,
+    });
+
+    const firstPlan = await engine.plan(input);
+    const secondPlan = await engine.plan({ ...input, customDomain: "gtm.example.com" });
+
+    await expect(engine.apply(firstPlan.lastSuccessfulPlanId!)).rejects.toThrow(
+      /latest reviewed terraform plan/i,
+    );
+    await expect(engine.apply(secondPlan.lastSuccessfulPlanId!)).resolves.toMatchObject({
+      phase: "applied",
+    });
+  });
+
+  it("loads persisted binary settings for each deployment operation", async () => {
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: options.command === "output" ? "{}" : "",
+        stderr: "",
+        logCallbackErrors: [],
+      }),
+    );
+    const settingsLoader = vi
+      .fn()
+      .mockResolvedValueOnce({
+        terraformPath: "/opt/bin/terraform-plan",
+        gcloudPath: "gcloud",
+        dockerPath: "docker",
+      })
+      .mockResolvedValueOnce({
+        terraformPath: "/opt/bin/terraform-apply",
+        gcloudPath: "gcloud",
+        dockerPath: "docker",
+      });
+    const engine = createDeploymentEngine({
+      paths: getWorkspacePaths(rootDir),
+      runner,
+      settingsLoader,
+      terraformModuleDir,
+    });
+
+    const plannedState = await engine.plan(input);
+    await engine.apply(plannedState.lastSuccessfulPlanId!);
+
+    expect(settingsLoader).toHaveBeenCalledTimes(2);
+    expect(runner.mock.calls.map(([call]) => [call.command, call.binaryPath])).toEqual([
+      ["init", "/opt/bin/terraform-plan"],
+      ["plan", "/opt/bin/terraform-plan"],
+      ["apply", "/opt/bin/terraform-apply"],
+      ["output", "/opt/bin/terraform-apply"],
+    ]);
   });
 
   it("rejects a concurrent plan while another plan is running", async () => {
@@ -217,14 +302,14 @@ describe("createDeploymentEngine", () => {
           exitCode: 0,
           stdout: "",
           stderr: "",
-          logCallbackErrors: []
+          logCallbackErrors: [],
         };
       },
     );
     const engine = createDeploymentEngine({
       paths: getWorkspacePaths(rootDir),
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     const firstPlan = engine.plan(input);
@@ -235,14 +320,62 @@ describe("createDeploymentEngine", () => {
 
     const [firstResult, secondResult] = await Promise.allSettled([firstPlan, secondPlan]);
 
-    expect(firstResult).toMatchObject({ status: "fulfilled", value: expect.objectContaining({ phase: "planned" }) });
+    expect(firstResult).toMatchObject({
+      status: "fulfilled",
+      value: expect.objectContaining({ phase: "planned" }),
+    });
     expect(secondResult).toMatchObject({
       status: "rejected",
       reason: expect.objectContaining({
-        message: expect.stringContaining("Another deployment operation is already running")
-      })
+        message: expect.stringContaining("Another deployment operation is already running"),
+      }),
     });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+  });
+
+  it("keeps the active plan redaction scoped when a concurrent plan is rejected", async () => {
+    const planStarted = createDeferred();
+    const releasePlan = createDeferred();
+    let planCalls = 0;
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        if (options.command === "plan") {
+          planCalls += 1;
+          if (planCalls === 1) {
+            await options.onLog?.(`plan uses ${input.gtmContainerConfig}`);
+            planStarted.resolve();
+            await releasePlan.promise;
+          }
+        }
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: options.command === "output" ? "{}" : "",
+          stderr: "",
+          logCallbackErrors: [],
+        };
+      },
+    );
+    const engine = createDeploymentEngine({
+      paths: getWorkspacePaths(rootDir),
+      runner,
+      terraformModuleDir,
+    });
+
+    const firstPlan = engine.plan(input);
+    await planStarted.promise;
+
+    await expect(
+      engine.plan({ ...input, gtmContainerConfig: "new-secret-config" }),
+    ).rejects.toThrow(/another deployment operation is already running/i);
+
+    releasePlan.resolve();
+    await expect(firstPlan).resolves.toMatchObject({ phase: "planned" });
+
+    const logs = await engine.getLogs();
+    expect(logs).toContain("[REDACTED]");
+    expect(logs).not.toContain(input.gtmContainerConfig);
   });
 
   it("releases the in-memory operation lock when workspace setup fails", async () => {
@@ -253,13 +386,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeFile(paths.workspaceDir, "blocked", "utf8");
@@ -279,13 +412,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeDeploymentState(paths, {
@@ -296,7 +429,8 @@ describe("createDeploymentEngine", () => {
       startedAt: "2026-07-02T00:00:00.000Z",
       updatedAt: "2026-07-02T00:01:00.000Z",
       lastSuccessfulPlanAt: null,
-      error: null
+      lastSuccessfulPlanId: null,
+      error: null,
     });
     await mkdir(paths.operationLockDir, { recursive: true });
     await writeFile(
@@ -305,9 +439,15 @@ describe("createDeploymentEngine", () => {
       "utf8",
     );
 
-    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(engine.plan(input)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
-    await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
   });
 
   it("recovers a legacy lock with the current pid even if its timestamp is old", async () => {
@@ -318,13 +458,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await mkdir(paths.operationLockDir, { recursive: true });
@@ -334,7 +474,10 @@ describe("createDeploymentEngine", () => {
       "utf8",
     );
 
-    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(engine.plan(input)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
   });
 
@@ -346,13 +489,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await mkdir(paths.operationLockDir, { recursive: true });
@@ -362,7 +505,10 @@ describe("createDeploymentEngine", () => {
       "utf8",
     );
 
-    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(engine.plan(input)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
   });
 
@@ -386,14 +532,14 @@ describe("createDeploymentEngine", () => {
           exitCode: 0,
           stdout: "",
           stderr: "",
-          logCallbackErrors: []
+          logCallbackErrors: [],
         };
       },
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     const firstPlan = engine.plan(input);
@@ -407,13 +553,21 @@ describe("createDeploymentEngine", () => {
     await symlink(
       encodeLockTarget({
         ...activeLockMetadata!,
-        ownerId: randomUUID()
+        ownerId: randomUUID(),
       }),
       paths.operationLockDir,
     );
 
-    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
-    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan", "init", "plan"]);
+    await expect(engine.plan(input)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual([
+      "init",
+      "plan",
+      "init",
+      "plan",
+    ]);
   });
 
   it("keeps a lock with the current owner identity active", async () => {
@@ -436,14 +590,14 @@ describe("createDeploymentEngine", () => {
           exitCode: 0,
           stdout: "",
           stderr: "",
-          logCallbackErrors: []
+          logCallbackErrors: [],
         };
       },
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     const firstPlan = engine.plan(input);
@@ -458,7 +612,7 @@ describe("createDeploymentEngine", () => {
     await symlink(activeLockTarget, paths.operationLockDir);
 
     await expect(engine.plan(input)).rejects.toMatchObject({
-      message: expect.stringContaining("Another deployment operation is already running: plan")
+      message: expect.stringContaining("Another deployment operation is already running: plan"),
     });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
   });
@@ -471,16 +625,16 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
     const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-      stdio: "ignore"
+      stdio: "ignore",
     });
     spawnedProcesses.push(child);
 
@@ -491,13 +645,13 @@ describe("createDeploymentEngine", () => {
         pid: child.pid!,
         ownerId: randomUUID(),
         processStartedAt: "2026-07-02T00:00:00.000Z",
-        acquiredAt: "2026-07-02T00:01:00.000Z"
+        acquiredAt: "2026-07-02T00:01:00.000Z",
       }),
       paths.operationLockDir,
     );
 
     await expect(engine.plan(input)).rejects.toMatchObject({
-      message: expect.stringContaining("Another deployment operation is already running: plan")
+      message: expect.stringContaining("Another deployment operation is already running: plan"),
     });
     expect(runner).not.toHaveBeenCalled();
   });
@@ -510,19 +664,19 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await mkdir(paths.operationLockDir, { recursive: true });
 
     await expect(engine.plan(input)).rejects.toMatchObject({
-      message: expect.stringContaining("Another deployment operation is already running: plan")
+      message: expect.stringContaining("Another deployment operation is already running: plan"),
     });
     expect(runner).not.toHaveBeenCalled();
   });
@@ -535,13 +689,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await mkdir(paths.operationLockDir, { recursive: true });
@@ -551,9 +705,15 @@ describe("createDeploymentEngine", () => {
       "utf8",
     );
 
-    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(engine.plan(input)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
-    await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
   });
 
   it("recovers a persisted active operation when no live lock remains", async () => {
@@ -564,13 +724,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeDeploymentState(paths, {
@@ -581,17 +741,24 @@ describe("createDeploymentEngine", () => {
       startedAt: "2026-07-02T00:00:00.000Z",
       updatedAt: "2026-07-02T00:01:00.000Z",
       lastSuccessfulPlanAt: null,
-      error: null
+      lastSuccessfulPlanId: null,
+      error: null,
     });
 
-    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(engine.plan(input)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
-    await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({
+      phase: "planned",
+      activeOperation: null,
+    });
   });
 
   it("preserves old outputs when a new plan reaches planned state without apply", async () => {
     const outputs: TerraformOutputMap = {
-      service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
+      service_url: { sensitive: false, type: "string", value: "https://old.example.com" },
     };
     const paths = getWorkspacePaths(rootDir);
     const runner = vi.fn(
@@ -600,13 +767,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeTerraformOutputs(paths, outputs);
@@ -617,7 +784,7 @@ describe("createDeploymentEngine", () => {
 
   it("preserves old outputs when a new plan fails", async () => {
     const outputs: TerraformOutputMap = {
-      service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
+      service_url: { sensitive: false, type: "string", value: "https://old.example.com" },
     };
     const paths = getWorkspacePaths(rootDir);
     const runner = vi.fn(
@@ -631,19 +798,22 @@ describe("createDeploymentEngine", () => {
           exitCode: 0,
           stdout: "",
           stderr: "",
-          logCallbackErrors: []
+          logCallbackErrors: [],
         };
       },
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeTerraformOutputs(paths, outputs);
 
-    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "failed", activeOperation: null });
+    await expect(engine.plan(input)).resolves.toMatchObject({
+      phase: "failed",
+      activeOperation: null,
+    });
     expect(await engine.getOutputs()).toEqual(outputs);
   });
 
@@ -663,14 +833,14 @@ describe("createDeploymentEngine", () => {
           exitCode: 0,
           stdout: "",
           stderr: "",
-          logCallbackErrors: []
+          logCallbackErrors: [],
         };
       },
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     const planPromise = engine.plan(input);
@@ -679,12 +849,12 @@ describe("createDeploymentEngine", () => {
     await expect(engine.getStatus()).resolves.toMatchObject({
       phase: "planning",
       activeOperation: "plan",
-      error: null
+      error: null,
     });
     await expect(readDeploymentState(paths)).resolves.toMatchObject({
       phase: "planning",
       activeOperation: "plan",
-      error: null
+      error: null,
     });
 
     releaseInit.resolve();
@@ -707,14 +877,14 @@ describe("createDeploymentEngine", () => {
           exitCode: 0,
           stdout: "",
           stderr: "",
-          logCallbackErrors: []
+          logCallbackErrors: [],
         };
       },
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     const planPromise = engine.plan(input);
@@ -729,12 +899,12 @@ describe("createDeploymentEngine", () => {
     await expect(engine.getStatus()).resolves.toMatchObject({
       phase: "planning",
       activeOperation: "plan",
-      error: null
+      error: null,
     });
     await expect(readDeploymentState(paths)).resolves.toMatchObject({
       phase: "planned",
       activeOperation: null,
-      error: null
+      error: null,
     });
   });
 
@@ -743,7 +913,7 @@ describe("createDeploymentEngine", () => {
     const engine = createDeploymentEngine({
       paths,
       runner: vi.fn(),
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeDeploymentState(paths, {
@@ -754,7 +924,8 @@ describe("createDeploymentEngine", () => {
       startedAt: "2026-07-02T00:00:00.000Z",
       updatedAt: "2026-07-02T00:01:00.000Z",
       lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-      error: null
+      lastSuccessfulPlanId: "plan-123",
+      error: null,
     });
     await mkdir(paths.workspaceDir, { recursive: true });
     await symlink(
@@ -763,7 +934,7 @@ describe("createDeploymentEngine", () => {
         pid: 999999,
         ownerId: randomUUID(),
         processStartedAt: "2026-07-02T00:00:00.000Z",
-        acquiredAt: "2026-07-02T00:01:00.000Z"
+        acquiredAt: "2026-07-02T00:01:00.000Z",
       }),
       paths.operationLockDir,
     );
@@ -771,12 +942,12 @@ describe("createDeploymentEngine", () => {
     await expect(engine.getStatus()).resolves.toMatchObject({
       phase: "planned",
       activeOperation: null,
-      error: null
+      error: null,
     });
     await expect(readDeploymentState(paths)).resolves.toMatchObject({
       phase: "planned",
       activeOperation: null,
-      error: null
+      error: null,
     });
     await expect(readlink(paths.operationLockDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -786,7 +957,7 @@ describe("createDeploymentEngine", () => {
     const engine = createDeploymentEngine({
       paths,
       runner: vi.fn(),
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeDeploymentState(paths, {
@@ -797,23 +968,24 @@ describe("createDeploymentEngine", () => {
       startedAt: "2026-07-02T00:00:00.000Z",
       updatedAt: "2026-07-02T00:01:00.000Z",
       lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-      error: null
+      lastSuccessfulPlanId: "plan-123",
+      error: null,
     });
 
     await expect(engine.getStatus()).resolves.toMatchObject({
       phase: "failed",
       activeOperation: null,
       error: {
-        message: expect.stringContaining("Recovered stale deployment operation: plan")
-      }
+        message: expect.stringContaining("Recovered stale deployment operation: plan"),
+      },
     });
     await expect(readDeploymentState(paths)).resolves.toMatchObject({
       phase: "failed",
-      activeOperation: null
+      activeOperation: null,
     });
   });
 
-  it("recreates the Terraform workdir so removed module files do not persist", async () => {
+  it("refreshes module source files without deleting local Terraform state", async () => {
     const paths = getWorkspacePaths(rootDir);
     const runner = vi.fn(
       async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
@@ -821,28 +993,51 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
     const staleTerraformFile = path.join(paths.gcpWorkdir, "removed.tf");
+    const stateFile = path.join(paths.gcpWorkdir, "terraform.tfstate");
+    const backupStateFile = path.join(paths.gcpWorkdir, "terraform.tfstate.backup");
+    const lockFile = path.join(paths.gcpWorkdir, ".terraform.lock.hcl");
+    const terraformDataDir = path.join(paths.gcpWorkdir, ".terraform");
+    const nestedStateFile = path.join(
+      terraformDataDir,
+      "terraform.tfstate.d",
+      "dev",
+      "terraform.tfstate",
+    );
 
     await mkdir(paths.gcpWorkdir, { recursive: true });
     await writeFile(staleTerraformFile, "# stale terraform file\n", "utf8");
+    await mkdir(path.dirname(nestedStateFile), { recursive: true });
+    await writeFile(stateFile, '{"version":4}\n', "utf8");
+    await writeFile(backupStateFile, '{"version":4,"serial":1}\n', "utf8");
+    await writeFile(lockFile, 'provider "registry.terraform.io/hashicorp/google" {}\n', "utf8");
+    await writeFile(nestedStateFile, '{"version":4,"workspace":"dev"}\n', "utf8");
 
     await engine.plan(input);
 
     await expect(readFile(staleTerraformFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(path.join(paths.gcpWorkdir, "main.tf"), "utf8")).resolves.toBe("terraform {}\n");
+    await expect(readFile(path.join(paths.gcpWorkdir, "main.tf"), "utf8")).resolves.toBe(
+      "terraform {}\n",
+    );
+    await expect(readFile(stateFile, "utf8")).resolves.toBe('{"version":4}\n');
+    await expect(readFile(backupStateFile, "utf8")).resolves.toBe('{"version":4,"serial":1}\n');
+    await expect(readFile(lockFile, "utf8")).resolves.toContain("hashicorp/google");
+    await expect(readFile(nestedStateFile, "utf8")).resolves.toBe(
+      '{"version":4,"workspace":"dev"}\n',
+    );
   });
 
   it("clears old outputs after a successful destroy", async () => {
     const outputs: TerraformOutputMap = {
-      service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
+      service_url: { sensitive: false, type: "string", value: "https://old.example.com" },
     };
     const paths = getWorkspacePaths(rootDir);
     const runner = vi.fn(
@@ -851,13 +1046,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const engine = createDeploymentEngine({
       paths,
       runner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await writeDeploymentState(paths, {
@@ -868,7 +1063,8 @@ describe("createDeploymentEngine", () => {
       startedAt: "2026-07-02T00:00:00.000Z",
       updatedAt: "2026-07-02T00:01:00.000Z",
       lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-      error: null
+      lastSuccessfulPlanId: "plan-123",
+      error: null,
     });
     await writeTerraformOutputs(paths, outputs);
 
@@ -886,13 +1082,13 @@ describe("createDeploymentEngine", () => {
         exitCode: 0,
         stdout: "",
         stderr: "",
-        logCallbackErrors: []
+        logCallbackErrors: [],
       }),
     );
     const planningEngine = createDeploymentEngine({
       paths,
       runner: planningRunner,
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await planningEngine.plan(input);
@@ -901,7 +1097,7 @@ describe("createDeploymentEngine", () => {
     const restartedEngine = createDeploymentEngine({
       paths,
       runner: vi.fn(),
-      terraformModuleDir
+      terraformModuleDir,
     });
 
     await expect(restartedEngine.getLogs()).resolves.toContain("[REDACTED]");

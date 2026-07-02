@@ -38,20 +38,23 @@ describe("settings route", () => {
     const settings = {
       terraformPath: "/opt/bin/terraform",
       gcloudPath: "/opt/bin/gcloud",
-      dockerPath: "/opt/bin/docker"
+      dockerPath: "/opt/bin/docker",
     };
 
     const response = await route.POST(
       new Request("http://localhost/api/settings", {
         method: "POST",
-        body: JSON.stringify(settings)
-      })
+        headers: {
+          origin: "http://localhost",
+        },
+        body: JSON.stringify(settings),
+      }),
     );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ settings });
     await expect(readFile(getWorkspacePaths(rootDir).settingsFile, "utf8")).resolves.toBe(
-      `${JSON.stringify(settings, null, 2)}\n`
+      `${JSON.stringify(settings, null, 2)}\n`,
     );
   });
 
@@ -64,9 +67,9 @@ describe("settings route", () => {
         body: JSON.stringify({
           terraformPath: "",
           gcloudPath: "gcloud",
-          dockerPath: "docker"
-        })
-      })
+          dockerPath: "docker",
+        }),
+      }),
     );
 
     expect(response.status).toBe(400);
@@ -74,11 +77,34 @@ describe("settings route", () => {
       expect.objectContaining({
         error: expect.objectContaining({
           fieldErrors: expect.objectContaining({
-            terraformPath: expect.any(Array)
-          })
-        })
-      })
+            terraformPath: expect.any(Array),
+          }),
+        }),
+      }),
     );
+  });
+
+  it("rejects cross-origin settings updates", async () => {
+    const route = await import("@/app/api/settings/route");
+
+    const response = await route.POST(
+      new Request("http://localhost/api/settings", {
+        method: "POST",
+        headers: {
+          referer: "https://evil.example/settings",
+        },
+        body: JSON.stringify({
+          terraformPath: "/opt/bin/terraform",
+          gcloudPath: "/opt/bin/gcloud",
+          dockerPath: "/opt/bin/docker",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "Cross-origin browser requests are not allowed.",
+    });
   });
 
   it("returns a 400 response when the settings body is invalid JSON", async () => {
@@ -87,13 +113,13 @@ describe("settings route", () => {
     const response = await route.POST(
       new Request("http://localhost/api/settings", {
         method: "POST",
-        body: "{not-json"
-      })
+        body: "{not-json",
+      }),
     );
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Request body must be valid JSON."
+      error: "Request body must be valid JSON.",
     });
   });
 
@@ -107,7 +133,7 @@ describe("settings route", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
-      error: expect.stringContaining("JSON")
+      error: expect.stringContaining("JSON"),
     });
   });
 });

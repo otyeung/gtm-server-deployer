@@ -9,13 +9,18 @@ export default function StatusPage() {
         <section className="mb-8 grid gap-6 rounded-[2rem] border border-slate-200 bg-white/85 p-8 shadow-[0_30px_70px_-45px_rgba(15,23,42,0.55)] backdrop-blur lg:grid-cols-[1.2fr_0.8fr]">
           <div>
             <Badge>GCP MVP</Badge>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">Status</h1>
+            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+              Status
+            </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-              Track Terraform phase transitions, inspect live logs, review emitted outputs, and protect destroy behind an explicit confirmation step.
+              Track Terraform phase transitions, inspect live logs, review emitted outputs, and
+              protect destroy behind an explicit confirmation step.
             </p>
           </div>
           <div className="rounded-[1.75rem] border border-slate-900 bg-slate-950 p-6 text-slate-100">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-300">Operations view</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-300">
+              Operations view
+            </p>
             <ol className="mt-4 space-y-4 text-sm leading-6 text-slate-300">
               <li>1. Poll status, logs, and outputs from the deployment APIs.</li>
               <li>2. Surface active phase and errors without leaving the control plane.</li>

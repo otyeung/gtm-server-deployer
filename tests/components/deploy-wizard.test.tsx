@@ -9,6 +9,7 @@ describe("DeployWizard", () => {
       "fetch",
       vi.fn(async () =>
         Response.json({
+          planId: "plan-123",
           state: {
             phase: "planned",
             activeOperation: null,
@@ -17,8 +18,9 @@ describe("DeployWizard", () => {
             startedAt: "2026-07-02T00:00:00.000Z",
             updatedAt: "2026-07-02T00:01:00.000Z",
             lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-            error: null
-          }
+            lastSuccessfulPlanId: "plan-123",
+            error: null,
+          },
         }),
       ),
     );
@@ -42,6 +44,13 @@ describe("DeployWizard", () => {
     expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeDisabled();
   });
 
+  it("shows HTTPS as always enabled for the MVP", () => {
+    render(<DeployWizard />);
+
+    expect(screen.getByRole("checkbox", { name: /Force HTTPS/i })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Force HTTPS/i })).toBeChecked();
+  });
+
   it("posts deployment input to the plan endpoint", async () => {
     const user = userEvent.setup();
     render(<DeployWizard />);
@@ -54,7 +63,7 @@ describe("DeployWizard", () => {
       "/api/deploy/plan",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json" }
+        headers: { "content-type": "application/json" },
       }),
     );
     expect(fetch).not.toHaveBeenCalledWith("/api/deploy/apply", expect.anything());
@@ -75,7 +84,11 @@ describe("DeployWizard", () => {
 
     expect(fetch).toHaveBeenLastCalledWith(
       "/api/deploy/apply",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ planId: "plan-123" }),
+      }),
     );
   });
 
@@ -106,13 +119,16 @@ describe("DeployWizard", () => {
 
     expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeDisabled();
     expect(
-      screen.getByText("Deployment settings changed after the last successful plan. Run Review and Plan again before applying."),
+      screen.getByText(
+        "Deployment settings changed after the last successful plan. Run Review and Plan again before applying.",
+      ),
     ).toBeInTheDocument();
   });
 
   it("keeps Confirm Apply disabled when plan returns a failed phase", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       Response.json({
+        planId: null,
         state: {
           phase: "failed",
           activeOperation: null,
@@ -121,13 +137,15 @@ describe("DeployWizard", () => {
           startedAt: "2026-07-02T00:00:00.000Z",
           updatedAt: "2026-07-02T00:01:00.000Z",
           lastSuccessfulPlanAt: null,
+          lastSuccessfulPlanId: null,
           error: {
             category: "terraform_failed",
             phase: "failed",
             message: "Terraform plan failed.",
-            remediation: "Review the Status page logs, fix the Terraform error, and rerun Review and Plan."
-          }
-        }
+            remediation:
+              "Review the Status page logs, fix the Terraform error, and rerun Review and Plan.",
+          },
+        },
       }),
     );
 
@@ -138,8 +156,11 @@ describe("DeployWizard", () => {
     await user.type(screen.getByLabelText("GTM container config"), "secret-config");
     await user.click(screen.getByRole("button", { name: "Review and Plan" }));
 
-    expect(await screen.findByText(/review the status page logs, fix the terraform error, and rerun review and plan\./i))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /review the status page logs, fix the terraform error, and rerun review and plan\./i,
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeDisabled();
   });
 
@@ -153,8 +174,11 @@ describe("DeployWizard", () => {
     await user.type(screen.getByLabelText("GTM container config"), "secret-config");
     await user.click(screen.getByRole("button", { name: "Review and Plan" }));
 
-    expect(await screen.findByText("Unable to reach the plan endpoint. Check your network connection and retry Review and Plan."))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Unable to reach the plan endpoint. Check your network connection and retry Review and Plan.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Review and Plan" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeDisabled();
   });
@@ -163,6 +187,7 @@ describe("DeployWizard", () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
         Response.json({
+          planId: "plan-123",
           state: {
             phase: "planned",
             activeOperation: null,
@@ -171,8 +196,9 @@ describe("DeployWizard", () => {
             startedAt: "2026-07-02T00:00:00.000Z",
             updatedAt: "2026-07-02T00:01:00.000Z",
             lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-            error: null
-          }
+            lastSuccessfulPlanId: "plan-123",
+            error: null,
+          },
         }),
       )
       .mockRejectedValueOnce(new Error("apply network down"));
@@ -189,8 +215,11 @@ describe("DeployWizard", () => {
 
     await user.click(applyButton);
 
-    expect(await screen.findByText("Unable to reach the apply endpoint. Check your network connection and retry Confirm Apply."))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Unable to reach the apply endpoint. Check your network connection and retry Confirm Apply.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeEnabled();
   });
 
@@ -198,6 +227,7 @@ describe("DeployWizard", () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
         Response.json({
+          planId: "plan-123",
           state: {
             phase: "planned",
             activeOperation: null,
@@ -206,8 +236,9 @@ describe("DeployWizard", () => {
             startedAt: "2026-07-02T00:00:00.000Z",
             updatedAt: "2026-07-02T00:01:00.000Z",
             lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-            error: null
-          }
+            lastSuccessfulPlanId: "plan-123",
+            error: null,
+          },
         }),
       )
       .mockResolvedValueOnce(
@@ -220,13 +251,15 @@ describe("DeployWizard", () => {
             startedAt: "2026-07-02T00:00:00.000Z",
             updatedAt: "2026-07-02T00:02:00.000Z",
             lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
+            lastSuccessfulPlanId: "plan-123",
             error: {
               category: "terraform_failed",
               phase: "failed",
               message: "Terraform apply failed.",
-              remediation: "Review the Status page logs, correct the Terraform error, and retry Confirm Apply."
-            }
-          }
+              remediation:
+                "Review the Status page logs, correct the Terraform error, and retry Confirm Apply.",
+            },
+          },
         }),
       );
 
@@ -242,8 +275,11 @@ describe("DeployWizard", () => {
 
     await user.click(applyButton);
 
-    expect(await screen.findByText(/terraform apply failed\. review the status page logs, correct the terraform error, and retry confirm apply\./i))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /terraform apply failed\. review the status page logs, correct the terraform error, and retry confirm apply\./i,
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Apply started. Open Status for live logs.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeEnabled();
   });

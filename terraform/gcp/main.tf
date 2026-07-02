@@ -5,22 +5,25 @@ locals {
     environment = var.environment
     managed-by  = "terraform"
   }
-  required_services = toset([
+  base_services = [
     "run.googleapis.com",
     "secretmanager.googleapis.com",
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "logging.googleapis.com",
-    "monitoring.googleapis.com",
-    "compute.googleapis.com",
-    "certificatemanager.googleapis.com",
-    "dns.googleapis.com"
-  ])
+    "monitoring.googleapis.com"
+  ]
   custom_domain_enabled    = var.custom_domain != ""
   normalized_custom_domain = lower(var.custom_domain)
   cloud_dns_zone_name_raw  = replace("${local.name_prefix}-${local.normalized_custom_domain}", ".", "-")
   cloud_dns_zone_name      = length(local.cloud_dns_zone_name_raw) <= 63 ? local.cloud_dns_zone_name_raw : "${substr(local.cloud_dns_zone_name_raw, 0, 54)}-${substr(sha1(local.normalized_custom_domain), 0, 8)}"
   preview_url_env          = var.enable_preview_server ? google_cloud_run_v2_service.preview[0].uri : ""
+  required_services = toset(concat(
+    local.base_services,
+    local.custom_domain_enabled ? ["compute.googleapis.com"] : [],
+    local.custom_domain_enabled && var.use_managed_ssl ? ["certificatemanager.googleapis.com"] : [],
+    local.custom_domain_enabled && var.enable_cloud_dns ? ["dns.googleapis.com"] : []
+  ))
 }
 
 resource "google_project_service" "required" {

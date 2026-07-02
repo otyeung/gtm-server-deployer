@@ -10,4 +10,11 @@ describe("HomePage", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Deploy to GCP" })).toHaveAttribute("href", "/deploy");
   });
+
+  it("includes a roadmap target for future provider links", () => {
+    render(<HomePage />);
+
+    expect(screen.getByRole("heading", { name: "Roadmap" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Azure/i })).toHaveAttribute("href", "#roadmap");
+  });
 });

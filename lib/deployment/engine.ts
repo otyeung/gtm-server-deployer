@@ -1,18 +1,23 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { cp, lstat, mkdir, readFile, readlink, rm, symlink } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, readlink, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { deploymentInputSchema, type DeploymentInput } from "@/lib/schemas/deployment";
 import { DEFAULT_LOCAL_SETTINGS, type LocalSettings } from "@/lib/schemas/settings";
 import {
   runTerraformCommand,
   type TerraformCommandOptions,
-  type TerraformCommandResult
+  type TerraformCommandResult,
 } from "@/lib/terraform/runner";
 import { DeploymentEngineError, normalizeError } from "./errors";
 import { getWorkspacePaths } from "./paths";
-import type { DeploymentOperation, DeploymentState, TerraformOutputMap, WorkspacePaths } from "./types";
+import type {
+  DeploymentOperation,
+  DeploymentState,
+  TerraformOutputMap,
+  WorkspacePaths,
+} from "./types";
 import {
   appendDeploymentLog,
   clearTerraformOutputs,
@@ -23,23 +28,22 @@ import {
   readTerraformOutputs,
   writeDeploymentState,
   writeTerraformOutputs,
-  writeTerraformVars
+  writeTerraformVars,
 } from "./workspace";
 
-export type TerraformRunner = (
-  options: TerraformCommandOptions,
-) => Promise<TerraformCommandResult>;
+export type TerraformRunner = (options: TerraformCommandOptions) => Promise<TerraformCommandResult>;
 
 export type DeploymentEngineOptions = {
   paths?: WorkspacePaths;
   settings?: LocalSettings;
+  settingsLoader?: () => Promise<LocalSettings>;
   runner?: TerraformRunner;
   terraformModuleDir?: string;
 };
 
 export type DeploymentEngine = {
   plan(input: DeploymentInput): Promise<DeploymentState>;
-  apply(): Promise<DeploymentState>;
+  apply(planId: string): Promise<DeploymentState>;
   destroy(): Promise<DeploymentState>;
   getStatus(): Promise<DeploymentState>;
   getLogs(): Promise<string>;
@@ -88,7 +92,9 @@ type OperationLockStatus =
       staleReason: string;
     };
 
-function isDeploymentOperation(value: string | null | undefined): value is "plan" | "apply" | "destroy" {
+function isDeploymentOperation(
+  value: string | null | undefined,
+): value is "plan" | "apply" | "destroy" {
   return value !== undefined && value !== null && ACTIVE_OPERATIONS.has(value);
 }
 
@@ -133,20 +139,20 @@ function parseOperationLockMetadata(
     return null;
   }
 
-  const processStartedAt = typeof metadata.processStartedAt === "string"
-    && !Number.isNaN(Date.parse(metadata.processStartedAt))
-    ? new Date(Date.parse(metadata.processStartedAt)).toISOString()
-    : null;
-  const ownerId = typeof metadata.ownerId === "string" && metadata.ownerId.length > 0
-    ? metadata.ownerId
-    : null;
+  const processStartedAt =
+    typeof metadata.processStartedAt === "string" &&
+    !Number.isNaN(Date.parse(metadata.processStartedAt))
+      ? new Date(Date.parse(metadata.processStartedAt)).toISOString()
+      : null;
+  const ownerId =
+    typeof metadata.ownerId === "string" && metadata.ownerId.length > 0 ? metadata.ownerId : null;
 
   return {
     operation: metadata.operation,
     pid,
     ownerId,
     processStartedAt,
-    acquiredAt: new Date(acquiredAt).toISOString()
+    acquiredAt: new Date(acquiredAt).toISOString(),
   };
 }
 
@@ -155,7 +161,8 @@ function createOperationLockError(activeOperation: string): DeploymentEngineErro
     category: "terraform_failed",
     phase: "failed",
     message: `Another deployment operation is already running: ${activeOperation}`,
-    remediation: "Wait for the active operation to finish before starting another deployment action."
+    remediation:
+      "Wait for the active operation to finish before starting another deployment action.",
   });
 }
 
@@ -165,7 +172,8 @@ function assertNoActiveOperation(state: DeploymentState): void {
       category: "terraform_failed",
       phase: state.phase,
       message: `Another deployment operation is already running: ${state.activeOperation}`,
-      remediation: "Wait for the active operation to finish before starting another deployment action."
+      remediation:
+        "Wait for the active operation to finish before starting another deployment action.",
     });
   }
 }
@@ -199,13 +207,53 @@ function getActivePhaseForOperation(operation: DeploymentOperation): DeploymentS
 }
 
 async function copyTerraformModule(sourceDir: string, targetDir: string): Promise<void> {
-  await rm(targetDir, { force: true, recursive: true });
+  await mkdir(targetDir, { recursive: true });
+  await removeModuleSourceFiles(targetDir);
   await cp(sourceDir, targetDir, { recursive: true, force: true });
 }
 
-async function readLegacyOperationLockMetadata(paths: WorkspacePaths): Promise<LegacyOperationLockMetadata | null> {
+function isModuleSourceFile(fileName: string): boolean {
+  return fileName === "README.md" || fileName.endsWith(".tf") || fileName.endsWith(".tftest.hcl");
+}
+
+async function removeModuleSourceFiles(targetDir: string): Promise<void> {
+  let entries;
+
   try {
-    return JSON.parse(await readFile(path.join(paths.operationLockDir, "metadata.json"), "utf8")) as LegacyOperationLockMetadata;
+    entries = await readdir(targetDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  for (const entry of entries) {
+    const entryPath = path.join(targetDir, entry.name);
+
+    if (entry.isDirectory()) {
+      if (entry.name === ".terraform") {
+        continue;
+      }
+
+      await removeModuleSourceFiles(entryPath);
+      continue;
+    }
+
+    if (isModuleSourceFile(entry.name)) {
+      await rm(entryPath, { force: true, recursive: true });
+    }
+  }
+}
+
+async function readLegacyOperationLockMetadata(
+  paths: WorkspacePaths,
+): Promise<LegacyOperationLockMetadata | null> {
+  try {
+    return JSON.parse(
+      await readFile(path.join(paths.operationLockDir, "metadata.json"), "utf8"),
+    ) as LegacyOperationLockMetadata;
   } catch {
     return null;
   }
@@ -218,7 +266,9 @@ function encodeOperationLockTarget(metadata: OperationLockMetadata): string {
 function parseOperationLockTarget(target: string): OperationLockMetadata | null {
   if (target.startsWith("v2:")) {
     try {
-      return parseOperationLockMetadata(JSON.parse(decodeURIComponent(target.slice(3))) as LegacyOperationLockMetadata);
+      return parseOperationLockMetadata(
+        JSON.parse(decodeURIComponent(target.slice(3))) as LegacyOperationLockMetadata,
+      );
     } catch {
       return null;
     }
@@ -231,7 +281,7 @@ function parseOperationLockTarget(target: string): OperationLockMetadata | null 
   return parseOperationLockMetadata({
     operation,
     pid,
-    acquiredAt
+    acquiredAt,
   });
 }
 
@@ -316,7 +366,10 @@ async function markStaleOperationRecovered(
   metadata: OperationLockMetadata | null,
 ): Promise<void> {
   const state = await readDeploymentState(paths);
-  const recoveredOperation = getOperationLabel(metadata?.operation ?? state.activeOperation, fallbackOperation);
+  const recoveredOperation = getOperationLabel(
+    metadata?.operation ?? state.activeOperation,
+    fallbackOperation,
+  );
 
   if (state.activeOperation || ["planning", "applying", "destroying"].includes(state.phase)) {
     await writeDeploymentState(paths, {
@@ -328,8 +381,8 @@ async function markStaleOperationRecovered(
         category: "terraform_failed",
         phase: "failed",
         message: `Recovered stale deployment operation: ${recoveredOperation} (${staleReason}).`,
-        remediation: "Retry the deployment action."
-      }
+        remediation: "Retry the deployment action.",
+      },
     });
   }
 }
@@ -351,14 +404,22 @@ async function recoverPersistedActiveOperation(
   const state = await readDeploymentState(paths);
 
   if (state.activeOperation || ACTIVE_PHASES.has(state.phase)) {
-    await markStaleOperationRecovered(paths, fallbackOperation, "missing live operation lock", null);
+    await markStaleOperationRecovered(
+      paths,
+      fallbackOperation,
+      "missing live operation lock",
+      null,
+    );
     return readDeploymentState(paths);
   }
 
   return state;
 }
 
-async function recoverStatusState(paths: WorkspacePaths, state: DeploymentState): Promise<DeploymentState> {
+async function recoverStatusState(
+  paths: WorkspacePaths,
+  state: DeploymentState,
+): Promise<DeploymentState> {
   const fallbackOperation = getFallbackOperationForState(state);
   const lockStatus = await inspectOperationLock(paths, fallbackOperation);
 
@@ -373,12 +434,17 @@ async function recoverStatusState(paths: WorkspacePaths, state: DeploymentState)
       activeOperation: lockStatus.operation,
       startedAt: state.startedAt ?? lockStatus.metadata?.acquiredAt ?? null,
       updatedAt: lockStatus.metadata?.acquiredAt ?? state.updatedAt,
-      error: null
+      error: null,
     };
   }
 
   if (lockStatus.kind === "recoverable") {
-    await recoverStaleOperationLock(paths, fallbackOperation, lockStatus.staleReason, lockStatus.metadata);
+    await recoverStaleOperationLock(
+      paths,
+      fallbackOperation,
+      lockStatus.staleReason,
+      lockStatus.metadata,
+    );
     return readDeploymentState(paths);
   }
 
@@ -414,7 +480,7 @@ async function acquireOperationGuard(
         pid: process.pid,
         ownerId: PROCESS_LOCK_OWNER_ID,
         processStartedAt: PROCESS_STARTED_AT,
-        acquiredAt: now()
+        acquiredAt: now(),
       }),
       paths.operationLockDir,
     );
@@ -429,7 +495,12 @@ async function acquireOperationGuard(
       }
 
       if (lockStatus.kind === "recoverable") {
-        await recoverStaleOperationLock(paths, operation, lockStatus.staleReason, lockStatus.metadata);
+        await recoverStaleOperationLock(
+          paths,
+          operation,
+          lockStatus.staleReason,
+          lockStatus.metadata,
+        );
         return acquireOperationGuard(paths, operation);
       }
 
@@ -454,28 +525,25 @@ async function acquireOperationGuard(
 
 export function createDeploymentEngine(options: DeploymentEngineOptions = {}): DeploymentEngine {
   const paths = options.paths ?? getWorkspacePaths();
-  const settings = options.settings ?? DEFAULT_LOCAL_SETTINGS;
+  const settingsLoader =
+    options.settingsLoader ?? (() => Promise.resolve(options.settings ?? DEFAULT_LOCAL_SETTINGS));
   const runner = options.runner ?? runTerraformCommand;
-  const terraformModuleDir = options.terraformModuleDir ?? path.join(process.cwd(), "terraform", "gcp");
-  let sensitiveValues: string[] = [];
+  const terraformModuleDir =
+    options.terraformModuleDir ?? path.join(process.cwd(), "terraform", "gcp");
 
-  async function getSensitiveValues(): Promise<readonly string[]> {
-    if (sensitiveValues.length === 0) {
-      sensitiveValues = await readPersistedSensitiveValues(paths);
-    }
-
-    return sensitiveValues;
-  }
-
-  async function run(command: TerraformCommandOptions["command"], args: readonly string[]) {
-    const effectiveSensitiveValues = await getSensitiveValues();
+  async function run(
+    settings: LocalSettings,
+    command: TerraformCommandOptions["command"],
+    args: readonly string[],
+    sensitiveValues: readonly string[],
+  ) {
     return runner({
       binaryPath: settings.terraformPath,
       command,
       args,
       cwd: paths.gcpWorkdir,
-      sensitiveValues: effectiveSensitiveValues,
-      onLog: (chunk) => appendDeploymentLog(paths, chunk)
+      sensitiveValues,
+      onLog: (chunk) => appendDeploymentLog(paths, chunk),
     });
   }
 
@@ -487,7 +555,6 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
   return {
     async plan(rawInput) {
       const input = deploymentInputSchema.parse(rawInput);
-      sensitiveValues = [input.gtmContainerConfig];
       const releaseGuard = await acquireOperationGuard(paths, "plan");
 
       try {
@@ -503,14 +570,24 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
           startedAt,
           updatedAt: startedAt,
           lastSuccessfulPlanAt: previous.lastSuccessfulPlanAt,
-          error: null
+          lastSuccessfulPlanId: previous.lastSuccessfulPlanId,
+          error: null,
         });
 
         try {
+          const settings = await settingsLoader();
           await copyTerraformModule(terraformModuleDir, paths.gcpWorkdir);
           await writeTerraformVars(paths, input);
-          await run("init", ["-input=false", "-no-color"]);
-          await run("plan", ["-input=false", "-no-color", `-var-file=${paths.tfvarsFile}`, "-out=tfplan"]);
+          await run(settings, "init", ["-input=false", "-no-color"], [input.gtmContainerConfig]);
+          await run(
+            settings,
+            "plan",
+            ["-input=false", "-no-color", `-var-file=${paths.tfvarsFile}`, "-out=tfplan"],
+            [input.gtmContainerConfig],
+          );
+
+          const completedAt = now();
+          const planId = randomUUID();
 
           return setState({
             phase: "planned",
@@ -518,9 +595,10 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
             projectId: input.projectId,
             region: input.region,
             startedAt,
-            updatedAt: now(),
-            lastSuccessfulPlanAt: now(),
-            error: null
+            updatedAt: completedAt,
+            lastSuccessfulPlanAt: completedAt,
+            lastSuccessfulPlanId: planId,
+            error: null,
           });
         } catch (error) {
           const deploymentError = normalizeError(error, "planning");
@@ -532,7 +610,8 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
             startedAt,
             updatedAt: now(),
             lastSuccessfulPlanAt: previous.lastSuccessfulPlanAt,
-            error: deploymentError
+            lastSuccessfulPlanId: previous.lastSuccessfulPlanId,
+            error: deploymentError,
           });
         }
       } finally {
@@ -540,31 +619,58 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       }
     },
 
-    async apply() {
+    async apply(planId: string) {
       const releaseGuard = await acquireOperationGuard(paths, "apply");
 
       try {
         const state = await recoverPersistedActiveOperation(paths, "apply");
         assertNoActiveOperation(state);
-        if (state.phase !== "planned" || !state.lastSuccessfulPlanAt) {
+        if (
+          state.phase !== "planned" ||
+          !state.lastSuccessfulPlanAt ||
+          !state.lastSuccessfulPlanId
+        ) {
           throw new DeploymentEngineError({
             category: "terraform_failed",
             phase: state.phase,
             message: "Run a successful Terraform plan before apply.",
-            remediation: "Open the Deploy wizard, run Review and Plan, then use Confirm Apply."
+            remediation: "Open the Deploy wizard, run Review and Plan, then use Confirm Apply.",
+          });
+        }
+
+        if (planId.trim().length === 0 || planId !== state.lastSuccessfulPlanId) {
+          throw new DeploymentEngineError({
+            category: "invalid_input",
+            phase: state.phase,
+            message: "Confirm Apply must use the latest reviewed Terraform plan.",
+            remediation: "Run Review and Plan again in the Deploy wizard before applying.",
           });
         }
 
         await setState({ ...state, phase: "applying", activeOperation: "apply", updatedAt: now() });
         try {
-          await run("apply", ["-input=false", "-no-color", "tfplan"]);
-          const outputResult = await run("output", ["-json"]);
+          const settings = await settingsLoader();
+          const sensitiveValues = await readPersistedSensitiveValues(paths);
+          await run(settings, "apply", ["-input=false", "-no-color", "tfplan"], sensitiveValues);
+          const outputResult = await run(settings, "output", ["-json"], sensitiveValues);
           const outputs = JSON.parse(outputResult.stdout || "{}") as TerraformOutputMap;
           await writeTerraformOutputs(paths, outputs);
-          return setState({ ...state, phase: "applied", activeOperation: null, updatedAt: now(), error: null });
+          return setState({
+            ...state,
+            phase: "applied",
+            activeOperation: null,
+            updatedAt: now(),
+            error: null,
+          });
         } catch (error) {
           const deploymentError = normalizeError(error, "applying");
-          return setState({ ...state, phase: "failed", activeOperation: null, updatedAt: now(), error: deploymentError });
+          return setState({
+            ...state,
+            phase: "failed",
+            activeOperation: null,
+            updatedAt: now(),
+            error: deploymentError,
+          });
         }
       } finally {
         await releaseGuard();
@@ -577,14 +683,37 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       try {
         const state = await recoverPersistedActiveOperation(paths, "destroy");
         assertNoActiveOperation(state);
-        await setState({ ...state, phase: "destroying", activeOperation: "destroy", updatedAt: now() });
+        await setState({
+          ...state,
+          phase: "destroying",
+          activeOperation: "destroy",
+          updatedAt: now(),
+        });
         try {
-          await run("destroy", ["-auto-approve", "-input=false", "-no-color", `-var-file=${paths.tfvarsFile}`]);
+          const settings = await settingsLoader();
+          await run(
+            settings,
+            "destroy",
+            ["-auto-approve", "-input=false", "-no-color", `-var-file=${paths.tfvarsFile}`],
+            await readPersistedSensitiveValues(paths),
+          );
           await clearTerraformOutputs(paths);
-          return setState({ ...state, phase: "destroyed", activeOperation: null, updatedAt: now(), error: null });
+          return setState({
+            ...state,
+            phase: "destroyed",
+            activeOperation: null,
+            updatedAt: now(),
+            error: null,
+          });
         } catch (error) {
           const deploymentError = normalizeError(error, "destroying");
-          return setState({ ...state, phase: "failed", activeOperation: null, updatedAt: now(), error: deploymentError });
+          return setState({
+            ...state,
+            phase: "failed",
+            activeOperation: null,
+            updatedAt: now(),
+            error: deploymentError,
+          });
         }
       } finally {
         await releaseGuard();
@@ -597,11 +726,11 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
     },
 
     async getLogs() {
-      return readDeploymentLog(paths, await getSensitiveValues());
+      return readDeploymentLog(paths, await readPersistedSensitiveValues(paths));
     },
 
     getOutputs() {
       return readTerraformOutputs(paths);
-    }
+    },
   };
 }

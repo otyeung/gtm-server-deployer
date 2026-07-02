@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ReviewSummary } from "@/components/deploy/review-summary";
 import { Badge } from "@/components/ui/badge";
@@ -79,9 +79,23 @@ function getPlanFailureMessage(state?: {
   return "Terraform plan did not reach the planned state. Open Status to inspect logs, fix the issue, and rerun Review and Plan.";
 }
 
+function getApplyFailureMessage(state?: {
+  phase?: string;
+  error?: {
+    message?: string;
+    remediation?: string;
+  } | null;
+}) {
+  if (state?.error?.message && state.error.remediation) {
+    return `${state.error.message} ${state.error.remediation}`;
+  }
+
+  return "Terraform apply did not complete successfully. Open Status to inspect logs, fix the issue, and retry Confirm Apply.";
+}
+
 export function DeployWizard() {
   const [review, setReview] = useState<DeploymentReview | null>(null);
-  const [planSucceeded, setPlanSucceeded] = useState(false);
+  const [lastPlannedSignature, setLastPlannedSignature] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isPlanning, setIsPlanning] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
@@ -91,13 +105,21 @@ export function DeployWizard() {
   });
 
   const {
+    control,
     formState: { errors },
     register
   } = form;
+  const watchedValues = useWatch({ control });
+  const currentSignature = JSON.stringify(watchedValues);
+  const planSucceeded = lastPlannedSignature !== null && currentSignature === lastPlannedSignature;
+  const requiresReplan = lastPlannedSignature !== null && currentSignature !== lastPlannedSignature;
+  const statusMessage = requiresReplan
+    ? "Deployment settings changed after the last successful plan. Run Review and Plan again before applying."
+    : message;
 
   async function plan(values: DeploymentInput) {
     setReview(sanitizeDeploymentInputForReview(values));
-    setPlanSucceeded(false);
+    setLastPlannedSignature(null);
     setMessage("Running Terraform plan…");
     setIsPlanning(true);
 
@@ -119,7 +141,7 @@ export function DeployWizard() {
         return;
       }
 
-      setPlanSucceeded(true);
+      setLastPlannedSignature(JSON.stringify(values));
       setMessage("Terraform plan succeeded. Confirm Apply is now available.");
     } catch {
       setMessage("Unable to reach the plan endpoint. Check your network connection and retry Review and Plan.");
@@ -139,11 +161,27 @@ export function DeployWizard() {
       const response = await fetch("/api/deploy/apply", { method: "POST" });
       const payload = await parseResponse(response);
 
-      setMessage(
-        response.ok
-          ? "Apply started. Open Status for live logs."
-          : payload.error ?? "Apply failed to start. Open Status for details, then retry Confirm Apply."
-      );
+      if (!response.ok) {
+        setMessage(payload.error ?? "Apply failed to start. Open Status for details, then retry Confirm Apply.");
+        return;
+      }
+
+      if (payload.state?.phase === "failed") {
+        setMessage(getApplyFailureMessage(payload.state));
+        return;
+      }
+
+      if (payload.state?.phase === "applied") {
+        setMessage("Apply completed successfully. Open Status for outputs and logs.");
+        return;
+      }
+
+      if (payload.state?.phase === "applying") {
+        setMessage("Apply started. Open Status for live logs.");
+        return;
+      }
+
+      setMessage("Apply response was received, but the deployment state is not yet actionable. Open Status for details before retrying Confirm Apply.");
     } catch {
       setMessage("Unable to reach the apply endpoint. Check your network connection and retry Confirm Apply.");
     } finally {
@@ -331,9 +369,9 @@ export function DeployWizard() {
             </Button>
           </div>
 
-          {message ? (
+          {statusMessage ? (
             <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              {message}
+              {statusMessage}
             </p>
           ) : null}
         </form>

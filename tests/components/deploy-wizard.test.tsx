@@ -79,6 +79,25 @@ describe("DeployWizard", () => {
     );
   });
 
+  it("requires a fresh plan after deployment settings change", async () => {
+    const user = userEvent.setup();
+    render(<DeployWizard />);
+
+    await user.type(screen.getByLabelText("GCP project ID"), "gtm-server-deployer");
+    await user.type(screen.getByLabelText("GTM container config"), "secret-config");
+    await user.click(screen.getByRole("button", { name: "Review and Plan" }));
+
+    const applyButton = await screen.findByRole("button", { name: "Confirm Apply" });
+    expect(applyButton).toBeEnabled();
+
+    await user.type(screen.getByLabelText("Custom domain"), "gtm.example.com");
+
+    expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeDisabled();
+    expect(
+      screen.getByText("Deployment settings changed after the last successful plan. Run Review and Plan again before applying."),
+    ).toBeInTheDocument();
+  });
+
   it("keeps Confirm Apply disabled when plan returns a failed phase", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       Response.json({
@@ -160,6 +179,60 @@ describe("DeployWizard", () => {
 
     expect(await screen.findByText("Unable to reach the apply endpoint. Check your network connection and retry Confirm Apply."))
       .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeEnabled();
+  });
+
+  it("shows apply failure details when the engine returns a failed state", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        Response.json({
+          state: {
+            phase: "planned",
+            activeOperation: null,
+            projectId: "gtm-server-deployer",
+            region: "asia-southeast1",
+            startedAt: "2026-07-02T00:00:00.000Z",
+            updatedAt: "2026-07-02T00:01:00.000Z",
+            lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
+            error: null
+          }
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          state: {
+            phase: "failed",
+            activeOperation: null,
+            projectId: "gtm-server-deployer",
+            region: "asia-southeast1",
+            startedAt: "2026-07-02T00:00:00.000Z",
+            updatedAt: "2026-07-02T00:02:00.000Z",
+            lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
+            error: {
+              category: "terraform_failed",
+              phase: "failed",
+              message: "Terraform apply failed.",
+              remediation: "Review the Status page logs, correct the Terraform error, and retry Confirm Apply."
+            }
+          }
+        }),
+      );
+
+    const user = userEvent.setup();
+    render(<DeployWizard />);
+
+    await user.type(screen.getByLabelText("GCP project ID"), "gtm-server-deployer");
+    await user.type(screen.getByLabelText("GTM container config"), "secret-config");
+    await user.click(screen.getByRole("button", { name: "Review and Plan" }));
+
+    const applyButton = await screen.findByRole("button", { name: "Confirm Apply" });
+    expect(applyButton).toBeEnabled();
+
+    await user.click(applyButton);
+
+    expect(await screen.findByText(/terraform apply failed\. review the status page logs, correct the terraform error, and retry confirm apply\./i))
+      .toBeInTheDocument();
+    expect(screen.queryByText("Apply started. Open Status for live logs.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Apply" })).toBeEnabled();
   });
 });

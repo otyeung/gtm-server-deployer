@@ -20,3 +20,7 @@ terraform apply tfplan
 ```
 
 The application generates the tfvars file and runs these commands from the local deployment engine.
+
+## License
+
+Licensed under the Apache License, Version 2.0. See the repository [LICENSE](../../LICENSE) file for details.

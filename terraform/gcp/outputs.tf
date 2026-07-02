@@ -25,7 +25,7 @@ output "region" {
 
 output "https_url" {
   description = "Custom HTTPS URL when a custom domain is configured."
-  value       = var.custom_domain != "" ? "https://${var.custom_domain}" : null
+  value       = var.custom_domain != "" ? "https://${lower(var.custom_domain)}" : null
 }
 
 output "load_balancer_ip" {

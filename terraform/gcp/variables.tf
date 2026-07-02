@@ -77,6 +77,11 @@ variable "use_managed_ssl" {
   type        = bool
   description = "Whether Google-managed SSL should be used when custom_domain is set."
   default     = true
+
+  validation {
+    condition     = var.custom_domain == "" || var.use_managed_ssl
+    error_message = "custom_domain currently requires use_managed_ssl = true because self-managed certificate inputs are not implemented in this module."
+  }
 }
 
 variable "custom_domain" {

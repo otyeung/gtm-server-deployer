@@ -16,8 +16,9 @@ locals {
     "certificatemanager.googleapis.com",
     "dns.googleapis.com"
   ])
-  custom_domain_enabled = var.custom_domain != ""
-  preview_url_env       = var.enable_preview_server ? google_cloud_run_v2_service.preview[0].uri : ""
+  custom_domain_enabled    = var.custom_domain != ""
+  normalized_custom_domain = lower(var.custom_domain)
+  preview_url_env          = var.enable_preview_server ? google_cloud_run_v2_service.preview[0].uri : ""
 }
 
 resource "google_project_service" "required" {
@@ -216,7 +217,7 @@ resource "google_compute_url_map" "https" {
   default_service = google_compute_backend_service.server[0].id
 
   host_rule {
-    hosts        = [var.custom_domain]
+    hosts        = [local.normalized_custom_domain]
     path_matcher = "gtm"
   }
 
@@ -230,7 +231,7 @@ resource "google_certificate_manager_dns_authorization" "domain" {
   count       = local.custom_domain_enabled && var.use_managed_ssl ? 1 : 0
   name        = "${local.name_prefix}-dns-auth"
   description = "DNS authorization for GTM Server custom domain"
-  domain      = var.custom_domain
+  domain      = local.normalized_custom_domain
 }
 
 resource "google_certificate_manager_certificate" "domain" {
@@ -251,6 +252,13 @@ resource "google_compute_target_https_proxy" "https" {
   name                             = "${local.name_prefix}-https-proxy"
   url_map                          = google_compute_url_map.https[0].id
   certificate_manager_certificates = var.use_managed_ssl ? [google_certificate_manager_certificate.domain[0].id] : []
+
+  lifecycle {
+    precondition {
+      condition     = !local.custom_domain_enabled || var.use_managed_ssl
+      error_message = "custom_domain currently requires use_managed_ssl = true because self-managed certificate inputs are not implemented in this module."
+    }
+  }
 }
 
 resource "google_compute_global_forwarding_rule" "https" {
@@ -266,8 +274,8 @@ resource "google_compute_global_forwarding_rule" "https" {
 resource "google_dns_managed_zone" "domain" {
   count       = local.custom_domain_enabled && var.enable_cloud_dns ? 1 : 0
   project     = var.project_id
-  name        = replace("${local.name_prefix}-${var.custom_domain}", ".", "-")
-  dns_name    = "${var.custom_domain}."
+  name        = replace("${local.name_prefix}-${local.normalized_custom_domain}", ".", "-")
+  dns_name    = "${local.normalized_custom_domain}."
   description = "Managed zone for GTM Server custom domain"
   labels      = local.labels
 }
@@ -276,7 +284,7 @@ resource "google_dns_record_set" "domain_a" {
   count        = local.custom_domain_enabled && var.enable_cloud_dns ? 1 : 0
   project      = var.project_id
   managed_zone = google_dns_managed_zone.domain[0].name
-  name         = "${var.custom_domain}."
+  name         = "${local.normalized_custom_domain}."
   type         = "A"
   ttl          = 300
   rrdatas      = [google_compute_global_address.https[0].address]

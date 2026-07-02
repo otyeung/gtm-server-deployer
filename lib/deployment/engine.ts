@@ -115,7 +115,8 @@ function parseOperationLockMetadata(
     return null;
   }
 
-  if (!Number.isInteger(metadata.pid) || (metadata.pid ?? 0) <= 0) {
+  const pid = metadata.pid;
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
     return null;
   }
 
@@ -142,7 +143,7 @@ function parseOperationLockMetadata(
 
   return {
     operation: metadata.operation,
-    pid: metadata.pid,
+    pid,
     ownerId,
     processStartedAt,
     acquiredAt: new Date(acquiredAt).toISOString()

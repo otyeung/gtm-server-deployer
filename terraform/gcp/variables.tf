@@ -88,6 +88,15 @@ variable "custom_domain" {
   type        = string
   description = "Optional custom domain for the HTTPS load balancer."
   default     = ""
+
+  validation {
+    condition = var.custom_domain == "" || (
+      var.custom_domain == trimspace(var.custom_domain) &&
+      length(var.custom_domain) <= 253 &&
+      can(regex("^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$", var.custom_domain))
+    )
+    error_message = "custom_domain must be empty or a valid DNS hostname/FQDN with no leading/trailing whitespace."
+  }
 }
 
 variable "enable_cloud_dns" {

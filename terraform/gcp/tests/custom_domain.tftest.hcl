@@ -15,6 +15,36 @@ run "requires_managed_ssl_for_custom_domains" {
   ]
 }
 
+run "rejects_invalid_custom_domain_values" {
+  command = plan
+
+  variables {
+    project_id           = "abcde-12345"
+    gtm_container_config = "dummy-config"
+    custom_domain        = "bad domain"
+    use_managed_ssl      = true
+  }
+
+  expect_failures = [
+    var.custom_domain,
+  ]
+}
+
+run "rejects_whitespace_padded_custom_domain_values" {
+  command = plan
+
+  variables {
+    project_id           = "abcde-12345"
+    gtm_container_config = "dummy-config"
+    custom_domain        = " bad.example.com "
+    use_managed_ssl      = true
+  }
+
+  expect_failures = [
+    var.custom_domain,
+  ]
+}
+
 run "normalizes_custom_domain_derived_values" {
   command = plan
 

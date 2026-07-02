@@ -169,6 +169,23 @@ function assertNoActiveOperation(state: DeploymentState): void {
   }
 }
 
+function getFallbackOperationForState(state: DeploymentState): DeploymentOperation {
+  if (state.activeOperation) {
+    return state.activeOperation;
+  }
+
+  switch (state.phase) {
+    case "planning":
+      return "plan";
+    case "applying":
+      return "apply";
+    case "destroying":
+      return "destroy";
+    default:
+      return "plan";
+  }
+}
+
 async function copyTerraformModule(sourceDir: string, targetDir: string): Promise<void> {
   await rm(targetDir, { force: true, recursive: true });
   await cp(sourceDir, targetDir, { recursive: true, force: true });
@@ -435,7 +452,6 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
         assertNoActiveOperation(previous);
 
         const startedAt = now();
-        await clearTerraformOutputs(paths);
         await setState({
           phase: "planning",
           activeOperation: "plan",
@@ -532,8 +548,9 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       }
     },
 
-    getStatus() {
-      return readDeploymentState(paths);
+    async getStatus() {
+      const state = await readDeploymentState(paths);
+      return recoverPersistedActiveOperation(paths, getFallbackOperationForState(state));
     },
 
     async getLogs() {

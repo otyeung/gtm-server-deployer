@@ -589,7 +589,7 @@ describe("createDeploymentEngine", () => {
     await expect(readDeploymentState(paths)).resolves.toMatchObject({ phase: "planned", activeOperation: null });
   });
 
-  it("clears old outputs when starting a new plan", async () => {
+  it("preserves old outputs when a new plan reaches planned state without apply", async () => {
     const outputs: TerraformOutputMap = {
       service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
     };
@@ -612,7 +612,71 @@ describe("createDeploymentEngine", () => {
     await writeTerraformOutputs(paths, outputs);
     await engine.plan(input);
 
-    expect(await engine.getOutputs()).toEqual({});
+    expect(await engine.getOutputs()).toEqual(outputs);
+  });
+
+  it("preserves old outputs when a new plan fails", async () => {
+    const outputs: TerraformOutputMap = {
+      service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
+    };
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        if (options.command === "plan") {
+          throw new Error("plan failed");
+        }
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          logCallbackErrors: []
+        };
+      },
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await writeTerraformOutputs(paths, outputs);
+
+    await expect(engine.plan(input)).resolves.toMatchObject({ phase: "failed", activeOperation: null });
+    expect(await engine.getOutputs()).toEqual(outputs);
+  });
+
+  it("recovers stale persisted active operation state when reading status without a live lock", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const engine = createDeploymentEngine({
+      paths,
+      runner: vi.fn(),
+      terraformModuleDir
+    });
+
+    await writeDeploymentState(paths, {
+      phase: "planning",
+      activeOperation: "plan",
+      projectId: input.projectId,
+      region: input.region,
+      startedAt: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:01:00.000Z",
+      lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
+      error: null
+    });
+
+    await expect(engine.getStatus()).resolves.toMatchObject({
+      phase: "failed",
+      activeOperation: null,
+      error: {
+        message: expect.stringContaining("Recovered stale deployment operation: plan")
+      }
+    });
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({
+      phase: "failed",
+      activeOperation: null
+    });
   });
 
   it("recreates the Terraform workdir so removed module files do not persist", async () => {

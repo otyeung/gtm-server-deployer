@@ -13,3 +13,4 @@ coverage/
 .terraform/
 .terraform.lock.hcl
 docs/
+.superpowers/

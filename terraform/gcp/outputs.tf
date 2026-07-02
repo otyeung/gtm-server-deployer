@@ -37,3 +37,8 @@ output "certificate_name" {
   description = "Certificate Manager certificate name when custom domain is configured."
   value       = var.custom_domain != "" && var.use_managed_ssl ? google_certificate_manager_certificate.domain[0].name : null
 }
+
+output "cloud_dns_name_servers" {
+  description = "Cloud DNS managed zone name servers when Cloud DNS is enabled for the custom domain, or null when disabled."
+  value       = var.custom_domain != "" && var.enable_cloud_dns ? google_dns_managed_zone.domain[0].name_servers : null
+}

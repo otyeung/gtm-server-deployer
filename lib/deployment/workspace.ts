@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import type { DeploymentInput } from "@/lib/schemas/deployment";
 import { redactSensitiveText } from "./redaction";
 import {
@@ -22,7 +22,9 @@ async function readJson<T>(filePath: string, fallback: T): Promise<T> {
 }
 
 async function writeJson(filePath: string, value: unknown): Promise<void> {
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const temporaryFilePath = `${filePath}.${process.pid}.tmp`;
+  await writeFile(temporaryFilePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(temporaryFilePath, filePath);
 }
 
 export async function ensureWorkspace(paths: WorkspacePaths): Promise<void> {
@@ -97,4 +99,8 @@ export async function writeTerraformOutputs(
 ): Promise<void> {
   await ensureWorkspace(paths);
   await writeJson(paths.outputsFile, outputs);
+}
+
+export async function clearTerraformOutputs(paths: WorkspacePaths): Promise<void> {
+  await writeTerraformOutputs(paths, {});
 }

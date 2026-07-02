@@ -55,6 +55,7 @@ export type WorkspacePaths = {
   logsDir: string;
   workdir: string;
   gcpWorkdir: string;
+  operationLockDir: string;
   stateFile: string;
   settingsFile: string;
   tfvarsFile: string;

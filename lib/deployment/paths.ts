@@ -13,6 +13,7 @@ export function getWorkspacePaths(rootDir = process.cwd()): WorkspacePaths {
     logsDir,
     workdir,
     gcpWorkdir,
+    operationLockDir: path.join(workspaceDir, "operation.lock"),
     stateFile: path.join(workspaceDir, "state.json"),
     settingsFile: path.join(workspaceDir, "settings.json"),
     tfvarsFile: path.join(workspaceDir, "terraform.tfvars.json"),

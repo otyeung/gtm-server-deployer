@@ -9,6 +9,8 @@ import { createDeploymentEngine } from "@/lib/deployment/engine";
 import { getWorkspacePaths } from "@/lib/deployment/paths";
 import type { DeploymentInput } from "@/lib/schemas/deployment";
 import type { TerraformCommandOptions, TerraformCommandResult } from "@/lib/terraform/runner";
+import { writeDeploymentState, writeTerraformOutputs } from "@/lib/deployment/workspace";
+import type { TerraformOutputMap } from "@/lib/deployment/types";
 
 const input: DeploymentInput = {
   provider: "gcp",
@@ -30,6 +32,15 @@ const input: DeploymentInput = {
 
 let rootDir: string;
 let terraformModuleDir: string;
+
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+
+  return { promise, resolve };
+}
 
 beforeEach(async () => {
   rootDir = path.join(process.cwd(), ".test-workspaces", `engine-${randomUUID()}`);
@@ -93,5 +104,116 @@ describe("createDeploymentEngine", () => {
 
     expect(state.phase).toBe("applied");
     expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan", "apply", "output"]);
+  });
+
+  it("rejects a concurrent plan while another plan is running", async () => {
+    const initStarted = createDeferred();
+    const releaseInit = createDeferred();
+    let initCalls = 0;
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        if (options.command === "init") {
+          initCalls += 1;
+          if (initCalls === 1) {
+            initStarted.resolve();
+            await releaseInit.promise;
+          }
+        }
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          logCallbackErrors: []
+        };
+      },
+    );
+    const engine = createDeploymentEngine({
+      paths: getWorkspacePaths(rootDir),
+      runner,
+      terraformModuleDir
+    });
+
+    const firstPlan = engine.plan(input);
+    await initStarted.promise;
+
+    const secondPlan = engine.plan(input);
+    releaseInit.resolve();
+
+    const [firstResult, secondResult] = await Promise.allSettled([firstPlan, secondPlan]);
+
+    expect(firstResult).toMatchObject({ status: "fulfilled", value: expect.objectContaining({ phase: "planned" }) });
+    expect(secondResult).toMatchObject({
+      status: "rejected",
+      reason: expect.objectContaining({
+        message: expect.stringContaining("Another deployment operation is already running")
+      })
+    });
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan"]);
+  });
+
+  it("clears old outputs when starting a new plan", async () => {
+    const outputs: TerraformOutputMap = {
+      service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
+    };
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await writeTerraformOutputs(paths, outputs);
+    await engine.plan(input);
+
+    expect(await engine.getOutputs()).toEqual({});
+  });
+
+  it("clears old outputs after a successful destroy", async () => {
+    const outputs: TerraformOutputMap = {
+      service_url: { sensitive: false, type: "string", value: "https://old.example.com" }
+    };
+    const paths = getWorkspacePaths(rootDir);
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        logCallbackErrors: []
+      }),
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    await writeDeploymentState(paths, {
+      phase: "applied",
+      activeOperation: null,
+      projectId: input.projectId,
+      region: input.region,
+      startedAt: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:01:00.000Z",
+      lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
+      error: null
+    });
+    await writeTerraformOutputs(paths, outputs);
+
+    const state = await engine.destroy();
+
+    expect(state.phase).toBe("destroyed");
+    expect(await engine.getOutputs()).toEqual({});
   });
 });

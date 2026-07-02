@@ -15,7 +15,7 @@ This module deploys the GCP MVP for `gtm-server-deployer`.
 
 ```bash
 terraform init
-terraform plan -var-file=/absolute/path/to/.gtm-server-deployer/terraform.tfvars.json
+terraform plan -out=tfplan -var-file=/absolute/path/to/.gtm-server-deployer/terraform.tfvars.json
 terraform apply tfplan
 ```
 

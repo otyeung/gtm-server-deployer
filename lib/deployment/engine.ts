@@ -346,6 +346,26 @@ async function recoverPersistedActiveOperation(
   return state;
 }
 
+async function recoverStatusState(paths: WorkspacePaths, state: DeploymentState): Promise<DeploymentState> {
+  if (!(state.activeOperation || ACTIVE_PHASES.has(state.phase))) {
+    return state;
+  }
+
+  const fallbackOperation = getFallbackOperationForState(state);
+  const lockStatus = await inspectOperationLock(paths, fallbackOperation);
+
+  if (lockStatus.kind === "active") {
+    return state;
+  }
+
+  if (lockStatus.kind === "recoverable") {
+    await recoverStaleOperationLock(paths, fallbackOperation, lockStatus.staleReason, lockStatus.metadata);
+    return readDeploymentState(paths);
+  }
+
+  return recoverPersistedActiveOperation(paths, fallbackOperation);
+}
+
 async function acquireOperationGuard(
   paths: WorkspacePaths,
   operation: "plan" | "apply" | "destroy",
@@ -550,7 +570,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
 
     async getStatus() {
       const state = await readDeploymentState(paths);
-      return recoverPersistedActiveOperation(paths, getFallbackOperationForState(state));
+      return recoverStatusState(paths, state);
     },
 
     async getLogs() {

@@ -647,6 +647,50 @@ describe("createDeploymentEngine", () => {
     expect(await engine.getOutputs()).toEqual(outputs);
   });
 
+  it("returns active status unchanged while a live operation lock exists", async () => {
+    const paths = getWorkspacePaths(rootDir);
+    const initStarted = createDeferred();
+    const releaseInit = createDeferred();
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => {
+        if (options.command === "init") {
+          initStarted.resolve();
+          await releaseInit.promise;
+        }
+
+        return {
+          command: options.command,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          logCallbackErrors: []
+        };
+      },
+    );
+    const engine = createDeploymentEngine({
+      paths,
+      runner,
+      terraformModuleDir
+    });
+
+    const planPromise = engine.plan(input);
+    await initStarted.promise;
+
+    await expect(engine.getStatus()).resolves.toMatchObject({
+      phase: "planning",
+      activeOperation: "plan",
+      error: null
+    });
+    await expect(readDeploymentState(paths)).resolves.toMatchObject({
+      phase: "planning",
+      activeOperation: "plan",
+      error: null
+    });
+
+    releaseInit.resolve();
+    await expect(planPromise).resolves.toMatchObject({ phase: "planned", activeOperation: null });
+  });
+
   it("recovers stale persisted active operation state when reading status without a live lock", async () => {
     const paths = getWorkspacePaths(rootDir);
     const engine = createDeploymentEngine({

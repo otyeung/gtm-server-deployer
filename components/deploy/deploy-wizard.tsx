@@ -50,16 +50,40 @@ function FieldError({ message }: { message?: string }) {
 
 async function parseResponse(response: Response) {
   try {
-    return (await response.json()) as { error?: string; state?: { phase?: string } };
+    return (await response.json()) as {
+      error?: string;
+      state?: {
+        phase?: string;
+        error?: {
+          message?: string;
+          remediation?: string;
+        } | null;
+      };
+    };
   } catch {
     return {};
   }
+}
+
+function getPlanFailureMessage(state?: {
+  phase?: string;
+  error?: {
+    message?: string;
+    remediation?: string;
+  } | null;
+}) {
+  if (state?.error?.message && state.error.remediation) {
+    return `${state.error.message} ${state.error.remediation}`;
+  }
+
+  return "Terraform plan did not reach the planned state. Open Status to inspect logs, fix the issue, and rerun Review and Plan.";
 }
 
 export function DeployWizard() {
   const [review, setReview] = useState<DeploymentReview | null>(null);
   const [planSucceeded, setPlanSucceeded] = useState(false);
   const [message, setMessage] = useState("");
+  const [isPlanning, setIsPlanning] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const form = useForm<DeploymentFormInput, undefined, DeploymentInput>({
     resolver: zodResolver(deploymentInputSchema),
@@ -67,7 +91,7 @@ export function DeployWizard() {
   });
 
   const {
-    formState: { errors, isSubmitting },
+    formState: { errors },
     register
   } = form;
 
@@ -75,25 +99,33 @@ export function DeployWizard() {
     setReview(sanitizeDeploymentInputForReview(values));
     setPlanSucceeded(false);
     setMessage("Running Terraform plan…");
+    setIsPlanning(true);
 
-    const response = await fetch("/api/deploy/plan", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(values)
-    });
-    const payload = await parseResponse(response);
+    try {
+      const response = await fetch("/api/deploy/plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(values)
+      });
+      const payload = await parseResponse(response);
 
-    if (!response.ok) {
-      setMessage(payload.error ?? "Terraform plan failed. Review the status page for details.");
-      return;
+      if (!response.ok) {
+        setMessage(payload.error ?? "Terraform plan failed. Open Status for details, then retry Review and Plan.");
+        return;
+      }
+
+      if (payload.state?.phase !== "planned") {
+        setMessage(getPlanFailureMessage(payload.state));
+        return;
+      }
+
+      setPlanSucceeded(true);
+      setMessage("Terraform plan succeeded. Confirm Apply is now available.");
+    } catch {
+      setMessage("Unable to reach the plan endpoint. Check your network connection and retry Review and Plan.");
+    } finally {
+      setIsPlanning(false);
     }
-
-    setPlanSucceeded(true);
-    setMessage(
-      payload.state?.phase === "planned"
-        ? "Terraform plan succeeded. Confirm Apply is now available."
-        : "Plan completed. Confirm Apply is now available."
-    );
   }
 
   async function apply() {
@@ -102,14 +134,21 @@ export function DeployWizard() {
     }
 
     setIsApplying(true);
-    const response = await fetch("/api/deploy/apply", { method: "POST" });
-    const payload = await parseResponse(response);
-    setMessage(
-      response.ok
-        ? "Apply started. Open Status for live logs."
-        : payload.error ?? "Apply failed to start."
-    );
-    setIsApplying(false);
+
+    try {
+      const response = await fetch("/api/deploy/apply", { method: "POST" });
+      const payload = await parseResponse(response);
+
+      setMessage(
+        response.ok
+          ? "Apply started. Open Status for live logs."
+          : payload.error ?? "Apply failed to start. Open Status for details, then retry Confirm Apply."
+      );
+    } catch {
+      setMessage("Unable to reach the apply endpoint. Check your network connection and retry Confirm Apply.");
+    } finally {
+      setIsApplying(false);
+    }
   }
 
   return (
@@ -277,8 +316,8 @@ export function DeployWizard() {
           </section>
 
           <div className="flex flex-wrap gap-3 border-t border-slate-200 pt-6">
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Planning…" : "Review and Plan"}
+            <Button type="submit" disabled={isPlanning}>
+              {isPlanning ? "Planning…" : "Review and Plan"}
             </Button>
             <Button
               type="button"

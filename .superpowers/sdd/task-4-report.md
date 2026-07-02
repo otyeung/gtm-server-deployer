@@ -36,3 +36,15 @@ DONE
   - Result: PASS (`tests/terraform/runner.test.ts` 4 tests passed, `tests/deployment/errors.test.ts` 2 tests passed)
 - `npm run lint`
   - Result: PASS
+
+## Task 4 Fix Report
+- Fixed `lib/terraform/runner.ts` by introducing `TerraformCommandError` carrying command, exit code, redacted stdout/stderr, and a safe log excerpt.
+- Updated `lib/deployment/errors.ts` so `normalizeError()` inspects `TerraformCommandError` output and classifies `ENOENT` spawn failures as `missing_binary`.
+- Expanded `tests/terraform/runner.test.ts` and `tests/deployment/errors.test.ts` to cover typed Terraform errors, permission-denied classification from Terraform stderr, and ENOENT normalization.
+
+### Exact Commands And Results
+- `npm test -- tests/terraform/runner.test.ts tests/deployment/errors.test.ts`
+  - First red run result: FAIL (`TerraformCommandError` missing export/constructor, `permission_denied` classification missing for Terraform command error, `missing_binary` classification missing for ENOENT)
+  - Final run result: PASS (`tests/terraform/runner.test.ts` 4 tests passed, `tests/deployment/errors.test.ts` 4 tests passed)
+- `npm run lint`
+  - Result: PASS

@@ -4,9 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { runTerraformCommand, type SpawnLike } from "@/lib/terraform/runner";
+import { TerraformCommandError, runTerraformCommand, type SpawnLike } from "@/lib/terraform/runner";
 
-function fakeSpawn(exitCode: number, stdoutChunks: readonly string[] = ["ok secret-config"]): SpawnLike {
+function fakeSpawn(
+  exitCode: number,
+  stdoutChunks: readonly string[] = ["ok secret-config"],
+  stderrChunks: readonly string[] = [],
+): SpawnLike {
   return vi.fn(() => {
     const child = new EventEmitter() as ReturnType<SpawnLike>;
     child.stdout = new PassThrough();
@@ -16,6 +20,9 @@ function fakeSpawn(exitCode: number, stdoutChunks: readonly string[] = ["ok secr
     queueMicrotask(() => {
       stdoutChunks.forEach((chunk) => {
         child.stdout.write(chunk);
+      });
+      stderrChunks.forEach((chunk) => {
+        child.stderr.write(chunk);
       });
       child.stdout.end();
       child.stderr.end();
@@ -44,17 +51,27 @@ describe("runTerraformCommand", () => {
     expect(onLog).toHaveBeenCalledWith("ok [REDACTED]");
   });
 
-  it("rejects when Terraform exits with a non-zero status", async () => {
-    await expect(
-      runTerraformCommand({
-        binaryPath: "terraform",
-        command: "apply",
-        args: ["-no-color"],
-        cwd: process.cwd(),
-        sensitiveValues: [],
-        spawnImpl: fakeSpawn(1)
-      }),
-    ).rejects.toThrow("Terraform apply failed with exit code 1");
+  it("rejects with a typed error carrying redacted output when Terraform exits with a non-zero status", async () => {
+    const promise = runTerraformCommand({
+      binaryPath: "terraform",
+      command: "apply",
+      args: ["-no-color"],
+      cwd: process.cwd(),
+      sensitiveValues: ["secret-config"],
+      spawnImpl: fakeSpawn(1, ["stdout secret-config"], ["stderr secret-config"])
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(TerraformCommandError);
+
+    await expect(promise).rejects.toMatchObject({
+      command: "apply",
+      exitCode: 1,
+      stdout: "stdout [REDACTED]",
+      stderr: "stderr [REDACTED]"
+    });
+
+    await expect(promise).rejects.toThrow("Terraform apply failed with exit code 1");
+    await expect(promise).rejects.toThrow("[REDACTED]");
   });
 
   it("does not fail a successful command when onLog throws or rejects", async () => {

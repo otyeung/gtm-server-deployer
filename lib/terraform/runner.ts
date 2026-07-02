@@ -30,6 +30,44 @@ export type TerraformCommandResult = {
   logCallbackErrors: Error[];
 };
 
+type TerraformCommandErrorOptions = Pick<TerraformCommandResult, "command" | "exitCode" | "stdout" | "stderr">;
+
+function buildLogExcerpt(stdout: string, stderr: string): string {
+  const combined = [stderr, stdout]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .join("\n");
+
+  if (combined.length <= 500) {
+    return combined;
+  }
+
+  return `${combined.slice(0, 497)}...`;
+}
+
+export class TerraformCommandError extends Error {
+  readonly command: TerraformCommand;
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly logExcerpt: string;
+
+  constructor({ command, exitCode, stdout, stderr }: TerraformCommandErrorOptions) {
+    const logExcerpt = buildLogExcerpt(stdout, stderr);
+    super(
+      logExcerpt.length > 0
+        ? `Terraform ${command} failed with exit code ${exitCode}: ${logExcerpt}`
+        : `Terraform ${command} failed with exit code ${exitCode}`,
+    );
+    this.name = "TerraformCommandError";
+    this.command = command;
+    this.exitCode = exitCode;
+    this.stdout = stdout;
+    this.stderr = stderr;
+    this.logExcerpt = logExcerpt;
+  }
+}
+
 class StreamingSensitiveRedactor {
   private readonly sensitiveValues: readonly string[];
   private readonly minBufferedLength: number;
@@ -168,7 +206,7 @@ export async function runTerraformCommand(
             return;
           }
 
-          reject(new Error(`Terraform ${options.command} failed with exit code ${result.exitCode}`));
+          reject(new TerraformCommandError(result));
         });
     });
   });

@@ -11,28 +11,114 @@ import { TerraformConsole } from "./terraform-console";
 type StatusPayload = { state: Partial<DeploymentState> };
 type LogsPayload = { logs: string };
 type OutputsPayload = { outputs: TerraformOutputMap };
+type ErrorPayload = { error?: unknown };
 
 type DashboardSnapshot = {
   state: Partial<DeploymentState>;
   logs: string;
   outputs: TerraformOutputMap;
+  errors: string[];
 };
 
-async function fetchSnapshot(): Promise<DashboardSnapshot> {
-  const [statusResponse, logsResponse, outputsResponse] = await Promise.all([
-    fetch("/api/status"),
-    fetch("/api/logs"),
-    fetch("/api/output")
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getResponseError(response: Response, payload: unknown): string {
+  if (isObject(payload) && typeof (payload as ErrorPayload).error === "string") {
+    return (payload as ErrorPayload).error as string;
+  }
+
+  return `Request failed with status ${response.status}.`;
+}
+
+function isStatusPayload(payload: unknown): payload is StatusPayload {
+  return isObject(payload) && isObject(payload.state);
+}
+
+function isLogsPayload(payload: unknown): payload is LogsPayload {
+  return isObject(payload) && typeof payload.logs === "string";
+}
+
+function isOutputsPayload(payload: unknown): payload is OutputsPayload {
+  return isObject(payload) && isObject(payload.outputs);
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSegment<T>({
+  endpoint,
+  fallback,
+  validate,
+  select
+}: {
+  endpoint: string;
+  fallback: T;
+  validate: (payload: unknown) => payload is { [key: string]: T };
+  select: (payload: { [key: string]: T }) => T;
+}): Promise<{ value: T; error: string | null }> {
+  try {
+    const response = await fetch(endpoint);
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      return {
+        value: fallback,
+        error: `${endpoint}: ${getResponseError(response, payload)}`
+      };
+    }
+
+    if (!validate(payload)) {
+      return {
+        value: fallback,
+        error: `${endpoint}: Response payload was invalid.`
+      };
+    }
+
+    return { value: select(payload), error: null };
+  } catch (error) {
+    return {
+      value: fallback,
+      error: `${endpoint}: ${error instanceof Error ? error.message : "Unknown error"}`
+    };
+  }
+}
+
+async function fetchSnapshot(previous: Omit<DashboardSnapshot, "errors">): Promise<DashboardSnapshot> {
+  const [statusResult, logsResult, outputsResult] = await Promise.all([
+    fetchSegment({
+      endpoint: "/api/status",
+      fallback: previous.state,
+      validate: isStatusPayload,
+      select: (payload) => payload.state
+    }),
+    fetchSegment({
+      endpoint: "/api/logs",
+      fallback: previous.logs,
+      validate: isLogsPayload,
+      select: (payload) => payload.logs
+    }),
+    fetchSegment({
+      endpoint: "/api/output",
+      fallback: previous.outputs,
+      validate: isOutputsPayload,
+      select: (payload) => payload.outputs
+    })
   ]);
 
-  const statusPayload = (await statusResponse.json()) as StatusPayload;
-  const logsPayload = (await logsResponse.json()) as LogsPayload;
-  const outputsPayload = (await outputsResponse.json()) as OutputsPayload;
-
   return {
-    state: statusPayload.state,
-    logs: logsPayload.logs,
-    outputs: outputsPayload.outputs
+    state: statusResult.value,
+    logs: logsResult.value,
+    outputs: outputsResult.value,
+    errors: [statusResult.error, logsResult.error, outputsResult.error].filter(
+      (error): error is string => error !== null,
+    )
   };
 }
 
@@ -40,19 +126,25 @@ export function StatusDashboard() {
   const [state, setState] = useState<Partial<DeploymentState>>({ phase: "idle" });
   const [logs, setLogs] = useState("");
   const [outputs, setOutputs] = useState<TerraformOutputMap>({});
+  const [errors, setErrors] = useState<string[]>([]);
 
   async function refresh() {
-    const snapshot = await fetchSnapshot();
+    const snapshot = await fetchSnapshot({ state, logs, outputs });
     setState(snapshot.state);
     setLogs(snapshot.logs);
     setOutputs(snapshot.outputs);
+    setErrors(snapshot.errors);
   }
 
   useEffect(() => {
     let isActive = true;
 
     async function load() {
-      const snapshot = await fetchSnapshot();
+      const snapshot = await fetchSnapshot({
+        state: { phase: "idle" },
+        logs: "",
+        outputs: {}
+      });
       if (!isActive) {
         return;
       }
@@ -60,6 +152,7 @@ export function StatusDashboard() {
       setState(snapshot.state);
       setLogs(snapshot.logs);
       setOutputs(snapshot.outputs);
+      setErrors(snapshot.errors);
     }
 
     void load();
@@ -97,6 +190,21 @@ export function StatusDashboard() {
             {state.error ? (
               <div className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                 {state.error.message}
+              </div>
+            ) : null}
+            {errors.length > 0 ? (
+              <div
+                className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                role="alert"
+              >
+                <p className="font-semibold">
+                  Status dashboard could not be refreshed. Check the deployment APIs, then try again.
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {errors.map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
               </div>
             ) : null}
           </div>

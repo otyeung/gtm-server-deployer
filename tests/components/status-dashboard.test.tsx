@@ -56,4 +56,41 @@ describe("StatusDashboard", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
+
+  it("shows safe defaults when status endpoints return errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+
+        if (url === "/api/status") {
+          return Response.json({ error: "Unable to read deployment state." }, { status: 500 });
+        }
+
+        if (url === "/api/logs") {
+          return Response.json({ error: "Unable to read logs." }, { status: 502 });
+        }
+
+        if (url === "/api/output") {
+          return Response.json({ error: "Unable to read outputs." }, { status: 503 });
+        }
+
+        return Response.json({ ok: true });
+      }),
+    );
+
+    render(<StatusDashboard />);
+
+    expect(await screen.findAllByText("idle")).toHaveLength(2);
+    expect(screen.getByText("No logs yet.")).toBeInTheDocument();
+    expect(screen.getByText("Terraform outputs will appear here after plan or apply completes.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Status dashboard could not be refreshed\. Check the deployment APIs, then try again\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/\/api\/status: Unable to read deployment state\./)).toBeInTheDocument();
+    expect(screen.getByText(/\/api\/logs: Unable to read logs\./)).toBeInTheDocument();
+    expect(screen.getByText(/\/api\/output: Unable to read outputs\./)).toBeInTheDocument();
+  });
 });

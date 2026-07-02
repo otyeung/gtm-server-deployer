@@ -5,26 +5,124 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DEFAULT_LOCAL_SETTINGS, type LocalSettings } from "@/lib/schemas/settings";
+import { DEFAULT_LOCAL_SETTINGS, settingsSchema, type LocalSettings } from "@/lib/schemas/settings";
+
+type SettingsResponse = {
+  settings?: unknown;
+  error?: unknown;
+};
+
+type SettingsRequestResult = {
+  settings: LocalSettings | null;
+  error: string | null;
+};
+
+type FeedbackState =
+  | {
+      tone: "success" | "error";
+      summary: string;
+      detail?: string;
+    }
+  | null;
+
+function getErrorMessage(response: Response, payload: unknown): string {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "error" in payload &&
+    typeof (payload as SettingsResponse).error === "string"
+  ) {
+    return (payload as SettingsResponse).error as string;
+  }
+
+  return `Request failed with status ${response.status}.`;
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function requestSettings(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<SettingsRequestResult> {
+  try {
+    const response = await fetch(input, init);
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      return { settings: null, error: getErrorMessage(response, payload) };
+    }
+
+    const parsed = settingsSchema.safeParse((payload as SettingsResponse | null)?.settings);
+    if (!parsed.success) {
+      return { settings: null, error: "Response did not include valid settings." };
+    }
+
+    return { settings: parsed.data, error: null };
+  } catch (error) {
+    return {
+      settings: null,
+      error: error instanceof Error ? error.message : "Unknown error"
+    };
+  }
+}
 
 export function SettingsForm() {
   const [settings, setSettings] = useState<LocalSettings>({ ...DEFAULT_LOCAL_SETTINGS });
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState<FeedbackState>(null);
 
   useEffect(() => {
-    void fetch("/api/settings")
-      .then((response) => response.json())
-      .then((data: { settings: LocalSettings }) => setSettings(data.settings));
+    let isActive = true;
+
+    async function loadSettings() {
+      const result = await requestSettings("/api/settings");
+      if (!isActive) {
+        return;
+      }
+
+      if (result.settings) {
+        setSettings(result.settings);
+        setFeedback(null);
+        return;
+      }
+
+      setFeedback({
+        tone: "error",
+        summary: "/api/settings could not be loaded. Check the local settings API, then try again.",
+        detail: result.error ?? undefined
+      });
+    }
+
+    void loadSettings();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   async function save() {
-    const response = await fetch("/api/settings", {
+    const result = await requestSettings("/api/settings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(settings)
     });
 
-    setMessage(response.ok ? "Settings saved." : "Settings could not be saved.");
+    if (result.settings) {
+      setSettings(result.settings);
+      setFeedback({ tone: "success", summary: "Settings saved." });
+      return;
+    }
+
+    setFeedback({
+      tone: "error",
+      summary: "/api/settings could not be saved. Check the local settings API, then try again.",
+      detail: result.error ?? undefined
+    });
   }
 
   return (
@@ -65,7 +163,15 @@ export function SettingsForm() {
           <Button onClick={save} type="button">
             Save settings
           </Button>
-          {message ? <p className="text-sm text-slate-600">{message}</p> : null}
+          {feedback ? (
+            <div
+              className={feedback.tone === "error" ? "text-sm text-red-700" : "text-sm text-slate-600"}
+              role={feedback.tone === "error" ? "alert" : undefined}
+            >
+              <p>{feedback.summary}</p>
+              {feedback.detail ? <p className="mt-1">{feedback.detail}</p> : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </Card>

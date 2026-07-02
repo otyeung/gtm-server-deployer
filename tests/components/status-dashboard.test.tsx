@@ -39,6 +39,52 @@ describe("StatusDashboard", () => {
     expect(await screen.findByText("https://server.run.app")).toBeInTheDocument();
   });
 
+  it("shows remediation and log excerpts for failed deployments", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+
+        if (url === "/api/status") {
+          return Response.json({
+            state: {
+              phase: "failed",
+              activeOperation: null,
+              error: {
+                category: "terraform_failed",
+                phase: "failed",
+                message: "Terraform apply failed.",
+                remediation: "Review the Terraform log excerpt, fix the reported issue, then run the failed step again.",
+                logExcerpt: "Error: resource creation timed out\n\nExit code: 1"
+              }
+            }
+          });
+        }
+
+        if (url === "/api/logs") {
+          return Response.json({ logs: "Terraform complete" });
+        }
+
+        return Response.json({
+          outputs: {
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
+          }
+        });
+      }),
+    );
+
+    render(<StatusDashboard />);
+
+    expect(await screen.findByText("Terraform apply failed.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Review the Terraform log excerpt, fix the reported issue, then run the failed step again.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/resource creation timed out/)).toBeInTheDocument();
+    expect(screen.getByText(/Exit code: 1/)).toBeInTheDocument();
+  });
+
   it("requires explicit destroy confirmation before posting", async () => {
     const user = userEvent.setup();
     render(<StatusDashboard />);

@@ -189,7 +189,15 @@ export function StatusDashboard() {
             </div>
             {state.error ? (
               <div className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                {state.error.message}
+                <p className="font-medium">{state.error.message}</p>
+                {state.error.remediation ? (
+                  <p className="mt-2">{state.error.remediation}</p>
+                ) : null}
+                {state.error.logExcerpt ? (
+                  <pre className="mt-3 overflow-x-auto rounded-xl border border-red-200 bg-red-100/70 p-3 font-mono text-xs leading-5 text-red-900 whitespace-pre-wrap">
+                    {state.error.logExcerpt}
+                  </pre>
+                ) : null}
               </div>
             ) : null}
             {errors.length > 0 ? (

@@ -27,3 +27,9 @@ DONE_WITH_CONCERNS
 - `npm run lint` ✅
 - `npm test -- tests/app/home.test.tsx` ✅
 - `npm run build` ✅
+
+## Task 1 Follow-up Fix
+- `npm test -- tests/app/home.test.tsx && npm run lint && npm run build`
+  - Result: failed from the repository root because `package.json` was not found there.
+- `cd /Users/dyeung/repo/technology_learning/057-adk/gtm-server-deployer/.worktrees/gtm-gcp-mvp && npm test -- tests/app/home.test.tsx && npm run lint && npm run build`
+  - Result: passed. Vitest passed 1 test, ESLint completed successfully, and `next build` completed successfully.

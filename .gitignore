@@ -1,1 +1,14 @@
 .worktrees/
+node_modules/
+.next/
+out/
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+.gtm-server-deployer/
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl

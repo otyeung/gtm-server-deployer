@@ -97,7 +97,7 @@ docs/superpowers/specs/
 
 ### Home
 
-The landing page introduces the project, describes the local-first deployment model, links to GitHub, and shows provider cards. GCP is marked available. AWS, Azure, and generic Terraform are marked planned or template-only.
+The landing page introduces the project, describes the local-first deployment model, links to GitHub and documentation, and shows provider cards. GCP is marked available. AWS, Azure, and generic Terraform are marked planned or template-only.
 
 ### Deploy Wizard
 

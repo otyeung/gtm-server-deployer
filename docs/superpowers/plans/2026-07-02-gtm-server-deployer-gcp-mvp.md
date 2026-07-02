@@ -102,6 +102,7 @@ The approved design is focused enough for one implementation plan: a GCP-only lo
 ### Task 1: Project Scaffold and Test Harness
 
 **Files:**
+
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `next.config.ts`
@@ -119,6 +120,7 @@ The approved design is focused enough for one implementation plan: a GCP-only lo
 - Test: `tests/app/home.test.tsx`
 
 **Interfaces:**
+
 - Produces: npm scripts `dev`, `build`, `start`, `lint`, `test`, `test:watch`, `format`, `format:check`.
 - Produces: path alias `@/*` for imports from the repository root.
 - Produces: `cn(...inputs: ClassValue[]): string` from `lib/utils.ts`.
@@ -138,7 +140,7 @@ Create `package.json`:
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
@@ -231,7 +233,7 @@ const config = {
   semi: true,
   trailingComma: "all",
   singleQuote: false,
-  printWidth: 100
+  printWidth: 100,
 };
 
 export default config;
@@ -242,8 +244,8 @@ Create `postcss.config.mjs`:
 ```js
 const config = {
   plugins: {
-    "@tailwindcss/postcss": {}
-  }
+    "@tailwindcss/postcss": {},
+  },
 };
 
 export default config;
@@ -259,13 +261,13 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    setupFiles: ["./tests/setup.ts"]
+    setupFiles: ["./tests/setup.ts"],
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, ".")
-    }
-  }
+      "@": path.resolve(__dirname, "."),
+    },
+  },
 });
 ```
 
@@ -319,10 +321,7 @@ describe("HomePage", () => {
     expect(
       screen.getByText("Deploy GTM Server-Side tagging infrastructure from your machine"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Deploy to GCP" })).toHaveAttribute(
-      "href",
-      "/deploy",
-    );
+    expect(screen.getByRole("link", { name: "Deploy to GCP" })).toHaveAttribute("href", "/deploy");
   });
 });
 ```
@@ -368,7 +367,13 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 ```
 
@@ -381,7 +386,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "gtm-server-deployer",
-  description: "Local-first GTM Server-Side tagging infrastructure deployment tool"
+  description: "Local-first GTM Server-Side tagging infrastructure deployment tool",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -437,7 +442,7 @@ const providers = [
   { name: "Google Cloud", status: "Available in MVP", href: "/deploy" },
   { name: "Azure", status: "Documented future provider", href: "#roadmap" },
   { name: "AWS", status: "Documented future provider", href: "#roadmap" },
-  { name: "Generic Terraform", status: "Documented future provider", href: "#roadmap" }
+  { name: "Generic Terraform", status: "Documented future provider", href: "#roadmap" },
 ];
 
 export default function HomePage() {
@@ -452,8 +457,8 @@ export default function HomePage() {
             Deploy GTM Server-Side tagging infrastructure from your machine
           </h1>
           <p className="max-w-2xl text-lg text-slate-600">
-            A portfolio-grade control plane for Google Tag Manager Server-Side deployments on
-            Google Cloud Run, Secret Manager, and optional managed HTTPS infrastructure.
+            A portfolio-grade control plane for Google Tag Manager Server-Side deployments on Google
+            Cloud Run, Secret Manager, and optional managed HTTPS infrastructure.
           </p>
           <div className="flex flex-wrap gap-3">
             <Link
@@ -482,7 +487,11 @@ export default function HomePage() {
       </section>
       <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {providers.map((provider) => (
-          <Link key={provider.name} href={provider.href} className="rounded-2xl border bg-white p-5">
+          <Link
+            key={provider.name}
+            href={provider.href}
+            className="rounded-2xl border bg-white p-5"
+          >
             <h2 className="font-semibold">{provider.name}</h2>
             <p className="mt-2 text-sm text-slate-600">{provider.status}</p>
           </Link>
@@ -517,12 +526,14 @@ git commit -m "chore(project): 建立 Next.js 專案骨架" -m "Co-authored-by: 
 ### Task 2: Deployment and Settings Schemas
 
 **Files:**
+
 - Create: `lib/schemas/deployment.ts`
 - Create: `lib/schemas/settings.ts`
 - Test: `tests/schemas/deployment.test.ts`
 - Test: `tests/schemas/settings.test.ts`
 
 **Interfaces:**
+
 - Produces: `deploymentInputSchema`
 - Produces: `type DeploymentInput = z.infer<typeof deploymentInputSchema>`
 - Produces: `sanitizeDeploymentInputForReview(input: DeploymentInput): DeploymentReview`
@@ -535,10 +546,7 @@ git commit -m "chore(project): 建立 Next.js 專案骨架" -m "Co-authored-by: 
 Create `tests/schemas/deployment.test.ts`:
 
 ```ts
-import {
-  deploymentInputSchema,
-  sanitizeDeploymentInputForReview
-} from "@/lib/schemas/deployment";
+import { deploymentInputSchema, sanitizeDeploymentInputForReview } from "@/lib/schemas/deployment";
 
 const validInput = {
   provider: "gcp",
@@ -555,7 +563,7 @@ const validInput = {
   useHttps: true,
   useManagedSsl: true,
   customDomain: "",
-  enableCloudDns: false
+  enableCloudDns: false,
 };
 
 describe("deploymentInputSchema", () => {
@@ -600,12 +608,12 @@ describe("settingsSchema", () => {
       settingsSchema.parse({
         terraformPath: "/opt/bin/terraform",
         gcloudPath: "/opt/bin/gcloud",
-        dockerPath: "/opt/bin/docker"
+        dockerPath: "/opt/bin/docker",
       }),
     ).toEqual({
       terraformPath: "/opt/bin/terraform",
       gcloudPath: "/opt/bin/gcloud",
-      dockerPath: "/opt/bin/docker"
+      dockerPath: "/opt/bin/docker",
     });
   });
 });
@@ -637,7 +645,10 @@ export const deploymentInputSchema = z
       .regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, "Use a valid GCP project ID"),
     region: z.string().min(1).default("asia-southeast1"),
     environment: z.enum(["dev", "prod"]).default("dev"),
-    containerImage: z.string().min(1).default("gcr.io/cloud-tagging-10302018/gtm-cloud-image:stable"),
+    containerImage: z
+      .string()
+      .min(1)
+      .default("gcr.io/cloud-tagging-10302018/gtm-cloud-image:stable"),
     cpu: z.enum(["1", "2", "4"]).default("1"),
     memory: z.enum(["512Mi", "1Gi", "2Gi", "4Gi"]).default("512Mi"),
     minInstances: z.number().int().min(0).max(10).default(0),
@@ -651,15 +662,15 @@ export const deploymentInputSchema = z
       .trim()
       .regex(/^$|^([a-z0-9-]+\.)+[a-z]{2,}$/i, "Use a valid domain name")
       .default(""),
-    enableCloudDns: z.boolean().default(false)
+    enableCloudDns: z.boolean().default(false),
   })
   .refine((value) => value.maxInstances >= value.minInstances, {
     path: ["maxInstances"],
-    message: "Max instances must be greater than or equal to min instances"
+    message: "Max instances must be greater than or equal to min instances",
   })
   .refine((value) => !value.enableCloudDns || value.customDomain.length > 0, {
     path: ["enableCloudDns"],
-    message: "Cloud DNS automation requires a custom domain"
+    message: "Cloud DNS automation requires a custom domain",
   });
 
 export type DeploymentInput = z.infer<typeof deploymentInputSchema>;
@@ -671,7 +682,7 @@ export type DeploymentReview = Omit<DeploymentInput, "gtmContainerConfig"> & {
 export function sanitizeDeploymentInputForReview(input: DeploymentInput): DeploymentReview {
   return {
     ...input,
-    gtmContainerConfig: "[REDACTED]"
+    gtmContainerConfig: "[REDACTED]",
   };
 }
 ```
@@ -684,13 +695,13 @@ import { z } from "zod";
 export const DEFAULT_LOCAL_SETTINGS = {
   terraformPath: "terraform",
   gcloudPath: "gcloud",
-  dockerPath: "docker"
+  dockerPath: "docker",
 } as const;
 
 export const settingsSchema = z.object({
   terraformPath: z.string().min(1).default(DEFAULT_LOCAL_SETTINGS.terraformPath),
   gcloudPath: z.string().min(1).default(DEFAULT_LOCAL_SETTINGS.gcloudPath),
-  dockerPath: z.string().min(1).default(DEFAULT_LOCAL_SETTINGS.dockerPath)
+  dockerPath: z.string().min(1).default(DEFAULT_LOCAL_SETTINGS.dockerPath),
 });
 
 export type LocalSettings = z.infer<typeof settingsSchema>;
@@ -718,6 +729,7 @@ git commit -m "feat(schema): 新增部署設定驗證" -m "Co-authored-by: Copil
 ### Task 3: Local Workspace, State, and Redaction
 
 **Files:**
+
 - Create: `lib/deployment/types.ts`
 - Create: `lib/deployment/redaction.ts`
 - Create: `lib/deployment/paths.ts`
@@ -726,6 +738,7 @@ git commit -m "feat(schema): 新增部署設定驗證" -m "Co-authored-by: Copil
 - Test: `tests/deployment/workspace.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DeploymentInput` from `lib/schemas/deployment.ts`.
 - Produces: `DeploymentPhase`, `DeploymentState`, `TerraformOutputMap`, `DeploymentLog`.
 - Produces: `getWorkspacePaths(rootDir?: string): WorkspacePaths`.
@@ -771,7 +784,7 @@ import {
   readDeploymentLog,
   readDeploymentState,
   writeDeploymentState,
-  writeTerraformVars
+  writeTerraformVars,
 } from "@/lib/deployment/workspace";
 import type { DeploymentState } from "@/lib/deployment/types";
 
@@ -804,7 +817,7 @@ describe("workspace", () => {
       startedAt: "2026-07-02T00:00:00.000Z",
       updatedAt: "2026-07-02T00:01:00.000Z",
       lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-      error: null
+      error: null,
     };
 
     await ensureWorkspace(paths);
@@ -832,7 +845,7 @@ describe("workspace", () => {
       useHttps: true,
       useManagedSsl: true,
       customDomain: "",
-      enableCloudDns: false
+      enableCloudDns: false,
     });
 
     const tfvars = JSON.parse(await readFile(paths.tfvarsFile, "utf8"));
@@ -866,14 +879,7 @@ Create `lib/deployment/types.ts`:
 
 ```ts
 export type DeploymentPhase =
-  | "idle"
-  | "planning"
-  | "planned"
-  | "applying"
-  | "applied"
-  | "destroying"
-  | "destroyed"
-  | "failed";
+  "idle" | "planning" | "planned" | "applying" | "applied" | "destroying" | "destroyed" | "failed";
 
 export type DeploymentOperation = "plan" | "apply" | "destroy";
 
@@ -935,7 +941,7 @@ export const EMPTY_DEPLOYMENT_STATE: DeploymentState = {
   startedAt: null,
   updatedAt: null,
   lastSuccessfulPlanAt: null,
-  error: null
+  error: null,
 };
 ```
 
@@ -973,7 +979,7 @@ export function getWorkspacePaths(rootDir = process.cwd()): WorkspacePaths {
     settingsFile: path.join(workspaceDir, "settings.json"),
     tfvarsFile: path.join(workspaceDir, "terraform.tfvars.json"),
     logFile: path.join(logsDir, "deployment.log"),
-    outputsFile: path.join(workspaceDir, "outputs.json")
+    outputsFile: path.join(workspaceDir, "outputs.json"),
   };
 }
 ```
@@ -990,7 +996,7 @@ import {
   EMPTY_DEPLOYMENT_STATE,
   type DeploymentState,
   type TerraformOutputMap,
-  type WorkspacePaths
+  type WorkspacePaths,
 } from "./types";
 
 async function readJson<T>(filePath: string, fallback: T): Promise<T> {
@@ -1062,7 +1068,7 @@ export async function writeTerraformVars(
     use_https: input.useHttps,
     use_managed_ssl: input.useManagedSsl,
     custom_domain: input.customDomain,
-    enable_cloud_dns: input.enableCloudDns
+    enable_cloud_dns: input.enableCloudDns,
   });
 }
 
@@ -1100,12 +1106,14 @@ git commit -m "feat(workspace): 新增本機部署狀態管理" -m "Co-authored-
 ### Task 4: Terraform Runner and Error Normalization
 
 **Files:**
+
 - Create: `lib/deployment/errors.ts`
 - Create: `lib/terraform/runner.ts`
 - Test: `tests/deployment/errors.test.ts`
 - Test: `tests/terraform/runner.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DeploymentPhase`, `DeploymentError`, `WorkspacePaths`.
 - Produces: `class DeploymentEngineError extends Error`.
 - Produces: `normalizeError(error, phase): DeploymentError`.
@@ -1127,7 +1135,7 @@ describe("normalizeError", () => {
         category: "missing_binary",
         phase: "planning",
         message: "Terraform binary was not found",
-        remediation: "Install Terraform or configure the Terraform path in Settings."
+        remediation: "Install Terraform or configure the Terraform path in Settings.",
       }),
       "planning",
     );
@@ -1178,7 +1186,7 @@ describe("runTerraformCommand", () => {
       args: ["-no-color"],
       cwd: "/tmp",
       sensitiveValues: ["secret-config"],
-      spawnImpl: fakeSpawn(0)
+      spawnImpl: fakeSpawn(0),
     });
 
     expect(result.exitCode).toBe(0);
@@ -1193,7 +1201,7 @@ describe("runTerraformCommand", () => {
         args: ["-no-color"],
         cwd: "/tmp",
         sensitiveValues: [],
-        spawnImpl: fakeSpawn(1)
+        spawnImpl: fakeSpawn(1),
       }),
     ).rejects.toThrow("Terraform apply failed with exit code 1");
   });
@@ -1240,7 +1248,8 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
       category: "permission_denied",
       phase,
       message,
-      remediation: "Verify the active gcloud account has IAM permissions for Cloud Run, Secret Manager, IAM, Compute, Certificate Manager, and Cloud DNS."
+      remediation:
+        "Verify the active gcloud account has IAM permissions for Cloud Run, Secret Manager, IAM, Compute, Certificate Manager, and Cloud DNS.",
     };
   }
 
@@ -1249,7 +1258,8 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
       category: "quota_exceeded",
       phase,
       message,
-      remediation: "Open the Google Cloud quota page for the selected project and request quota or choose a smaller region/resource size."
+      remediation:
+        "Open the Google Cloud quota page for the selected project and request quota or choose a smaller region/resource size.",
     };
   }
 
@@ -1258,7 +1268,7 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
       category: "missing_binary",
       phase,
       message,
-      remediation: "Install Terraform or configure the Terraform binary path in Settings."
+      remediation: "Install Terraform or configure the Terraform binary path in Settings.",
     };
   }
 
@@ -1266,7 +1276,8 @@ export function normalizeError(error: unknown, phase: DeploymentPhase): Deployme
     category: "unknown",
     phase,
     message,
-    remediation: "Review the Terraform log excerpt, fix the reported issue, then run the failed step again."
+    remediation:
+      "Review the Terraform log excerpt, fix the reported issue, then run the failed step again.",
   };
 }
 ```
@@ -1276,7 +1287,11 @@ Create `lib/terraform/runner.ts`:
 ```ts
 import "server-only";
 
-import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+  type SpawnOptionsWithoutStdio,
+} from "node:child_process";
 import { redactSensitiveText } from "@/lib/deployment/redaction";
 
 export type TerraformCommand = "init" | "plan" | "apply" | "output" | "destroy";
@@ -1312,7 +1327,7 @@ export async function runTerraformCommand(
   const child = spawnImpl(options.binaryPath, [options.command, ...options.args], {
     cwd: options.cwd,
     env: { ...process.env, ...options.env },
-    shell: false
+    shell: false,
   });
 
   let stdout = "";
@@ -1343,7 +1358,7 @@ export async function runTerraformCommand(
         command: options.command,
         exitCode: exitCode ?? 1,
         stdout,
-        stderr
+        stderr,
       };
 
       if (result.exitCode === 0) {
@@ -1379,11 +1394,13 @@ git commit -m "feat(terraform): 新增 Terraform 執行器" -m "Co-authored-by: 
 ### Task 5: Deployment Engine State Machine
 
 **Files:**
+
 - Create: `lib/deployment/engine.ts`
 - Create: `lib/deployment/engine-instance.ts`
 - Test: `tests/deployment/engine.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DeploymentInput`, `LocalSettings`, workspace helpers, `runTerraformCommand`.
 - Produces: `createDeploymentEngine(options?: DeploymentEngineOptions): DeploymentEngine`.
 - Produces: `DeploymentEngine.plan(input): Promise<DeploymentState>`.
@@ -1423,7 +1440,7 @@ const input: DeploymentInput = {
   useHttps: true,
   useManagedSsl: true,
   customDomain: "",
-  enableCloudDns: false
+  enableCloudDns: false,
 };
 
 let rootDir: string;
@@ -1438,12 +1455,14 @@ afterEach(async () => {
 
 describe("createDeploymentEngine", () => {
   it("runs init and plan before marking deployment planned", async () => {
-    const runner = vi.fn(async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
-      command: options.command,
-      exitCode: 0,
-      stdout: "",
-      stderr: ""
-    }));
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      }),
+    );
     const engine = createDeploymentEngine({ paths: getWorkspacePaths(rootDir), runner });
 
     const state = await engine.plan(input);
@@ -1459,19 +1478,26 @@ describe("createDeploymentEngine", () => {
   });
 
   it("runs apply after a successful plan", async () => {
-    const runner = vi.fn(async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
-      command: options.command,
-      exitCode: 0,
-      stdout: options.command === "output" ? "{}" : "",
-      stderr: ""
-    }));
+    const runner = vi.fn(
+      async (options: TerraformCommandOptions): Promise<TerraformCommandResult> => ({
+        command: options.command,
+        exitCode: 0,
+        stdout: options.command === "output" ? "{}" : "",
+        stderr: "",
+      }),
+    );
     const engine = createDeploymentEngine({ paths: getWorkspacePaths(rootDir), runner });
 
     await engine.plan(input);
     const state = await engine.apply();
 
     expect(state.phase).toBe("applied");
-    expect(runner.mock.calls.map(([call]) => call.command)).toEqual(["init", "plan", "apply", "output"]);
+    expect(runner.mock.calls.map(([call]) => call.command)).toEqual([
+      "init",
+      "plan",
+      "apply",
+      "output",
+    ]);
   });
 });
 ```
@@ -1500,7 +1526,7 @@ import { DEFAULT_LOCAL_SETTINGS, type LocalSettings } from "@/lib/schemas/settin
 import {
   runTerraformCommand,
   type TerraformCommandOptions,
-  type TerraformCommandResult
+  type TerraformCommandResult,
 } from "@/lib/terraform/runner";
 import { DeploymentEngineError, normalizeError } from "./errors";
 import { getWorkspacePaths } from "./paths";
@@ -1513,12 +1539,10 @@ import {
   readTerraformOutputs,
   writeDeploymentState,
   writeTerraformOutputs,
-  writeTerraformVars
+  writeTerraformVars,
 } from "./workspace";
 
-export type TerraformRunner = (
-  options: TerraformCommandOptions,
-) => Promise<TerraformCommandResult>;
+export type TerraformRunner = (options: TerraformCommandOptions) => Promise<TerraformCommandResult>;
 
 export type DeploymentEngineOptions = {
   paths?: WorkspacePaths;
@@ -1546,7 +1570,8 @@ function assertNoActiveOperation(state: DeploymentState): void {
       category: "terraform_failed",
       phase: state.phase,
       message: `Another deployment operation is already running: ${state.activeOperation}`,
-      remediation: "Wait for the active operation to finish before starting another deployment action."
+      remediation:
+        "Wait for the active operation to finish before starting another deployment action.",
     });
   }
 }
@@ -1559,7 +1584,8 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
   const paths = options.paths ?? getWorkspacePaths();
   const settings = options.settings ?? DEFAULT_LOCAL_SETTINGS;
   const runner = options.runner ?? runTerraformCommand;
-  const terraformModuleDir = options.terraformModuleDir ?? path.join(process.cwd(), "terraform", "gcp");
+  const terraformModuleDir =
+    options.terraformModuleDir ?? path.join(process.cwd(), "terraform", "gcp");
   let sensitiveValues: string[] = [];
 
   async function run(command: TerraformCommandOptions["command"], args: readonly string[]) {
@@ -1569,7 +1595,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
       args,
       cwd: paths.gcpWorkdir,
       sensitiveValues,
-      onLog: (chunk) => appendDeploymentLog(paths, chunk)
+      onLog: (chunk) => appendDeploymentLog(paths, chunk),
     });
   }
 
@@ -1595,14 +1621,19 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
         startedAt,
         updatedAt: startedAt,
         lastSuccessfulPlanAt: previous.lastSuccessfulPlanAt,
-        error: null
+        error: null,
       });
 
       try {
         await copyTerraformModule(terraformModuleDir, paths.gcpWorkdir);
         await writeTerraformVars(paths, input);
         await run("init", ["-input=false", "-no-color"]);
-        await run("plan", ["-input=false", "-no-color", `-var-file=${paths.tfvarsFile}`, "-out=tfplan"]);
+        await run("plan", [
+          "-input=false",
+          "-no-color",
+          `-var-file=${paths.tfvarsFile}`,
+          "-out=tfplan",
+        ]);
 
         return setState({
           phase: "planned",
@@ -1612,7 +1643,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
           startedAt,
           updatedAt: now(),
           lastSuccessfulPlanAt: now(),
-          error: null
+          error: null,
         });
       } catch (error) {
         const deploymentError = normalizeError(error, "planning");
@@ -1624,7 +1655,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
           startedAt,
           updatedAt: now(),
           lastSuccessfulPlanAt: previous.lastSuccessfulPlanAt,
-          error: deploymentError
+          error: deploymentError,
         });
       }
     },
@@ -1637,7 +1668,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
           category: "terraform_failed",
           phase: state.phase,
           message: "Run a successful Terraform plan before apply.",
-          remediation: "Open the Deploy wizard, run Review and Plan, then use Confirm Apply."
+          remediation: "Open the Deploy wizard, run Review and Plan, then use Confirm Apply.",
         });
       }
 
@@ -1647,23 +1678,57 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
         const outputResult = await run("output", ["-json"]);
         const outputs = JSON.parse(outputResult.stdout || "{}") as TerraformOutputMap;
         await writeTerraformOutputs(paths, outputs);
-        return setState({ ...state, phase: "applied", activeOperation: null, updatedAt: now(), error: null });
+        return setState({
+          ...state,
+          phase: "applied",
+          activeOperation: null,
+          updatedAt: now(),
+          error: null,
+        });
       } catch (error) {
         const deploymentError = normalizeError(error, "applying");
-        return setState({ ...state, phase: "failed", activeOperation: null, updatedAt: now(), error: deploymentError });
+        return setState({
+          ...state,
+          phase: "failed",
+          activeOperation: null,
+          updatedAt: now(),
+          error: deploymentError,
+        });
       }
     },
 
     async destroy() {
       const state = await readDeploymentState(paths);
       assertNoActiveOperation(state);
-      await setState({ ...state, phase: "destroying", activeOperation: "destroy", updatedAt: now() });
+      await setState({
+        ...state,
+        phase: "destroying",
+        activeOperation: "destroy",
+        updatedAt: now(),
+      });
       try {
-        await run("destroy", ["-auto-approve", "-input=false", "-no-color", `-var-file=${paths.tfvarsFile}`]);
-        return setState({ ...state, phase: "destroyed", activeOperation: null, updatedAt: now(), error: null });
+        await run("destroy", [
+          "-auto-approve",
+          "-input=false",
+          "-no-color",
+          `-var-file=${paths.tfvarsFile}`,
+        ]);
+        return setState({
+          ...state,
+          phase: "destroyed",
+          activeOperation: null,
+          updatedAt: now(),
+          error: null,
+        });
       } catch (error) {
         const deploymentError = normalizeError(error, "destroying");
-        return setState({ ...state, phase: "failed", activeOperation: null, updatedAt: now(), error: deploymentError });
+        return setState({
+          ...state,
+          phase: "failed",
+          activeOperation: null,
+          updatedAt: now(),
+          error: deploymentError,
+        });
       }
     },
 
@@ -1677,7 +1742,7 @@ export function createDeploymentEngine(options: DeploymentEngineOptions = {}): D
 
     getOutputs() {
       return readTerraformOutputs(paths);
-    }
+    },
   };
 }
 ```
@@ -1719,6 +1784,7 @@ git commit -m "feat(engine): 新增部署流程狀態機" -m "Co-authored-by: Co
 ### Task 6: API Route Handlers
 
 **Files:**
+
 - Create: `app/api/deploy/plan/route.ts`
 - Create: `app/api/deploy/apply/route.ts`
 - Create: `app/api/destroy/route.ts`
@@ -1730,6 +1796,7 @@ git commit -m "feat(engine): 新增部署流程狀態機" -m "Co-authored-by: Co
 - Test: `tests/api/settings-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getDeploymentEngine()`.
 - Produces: JSON route handler responses using `Response.json`.
 - Produces: Node runtime route handlers with `export const runtime = "nodejs"`.
@@ -1749,11 +1816,11 @@ const engine: DeploymentEngine = {
   destroy: vi.fn(),
   getStatus: vi.fn(),
   getLogs: vi.fn(),
-  getOutputs: vi.fn()
+  getOutputs: vi.fn(),
 };
 
 vi.mock("@/lib/deployment/engine-instance", () => ({
-  getDeploymentEngine: () => engine
+  getDeploymentEngine: () => engine,
 }));
 
 const state = {
@@ -1764,7 +1831,7 @@ const state = {
   startedAt: "2026-07-02T00:00:00.000Z",
   updatedAt: "2026-07-02T00:01:00.000Z",
   lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-  error: null
+  error: null,
 };
 
 describe("deployment API routes", () => {
@@ -1794,8 +1861,8 @@ describe("deployment API routes", () => {
           useHttps: true,
           useManagedSsl: true,
           customDomain: "",
-          enableCloudDns: false
-        })
+          enableCloudDns: false,
+        }),
       }),
     );
 
@@ -1825,7 +1892,7 @@ describe("settings route", () => {
     const response = await POST(
       new Request("http://localhost/api/settings", {
         method: "POST",
-        body: JSON.stringify({ terraformPath: "", gcloudPath: "gcloud", dockerPath: "docker" })
+        body: JSON.stringify({ terraformPath: "", gcloudPath: "gcloud", dockerPath: "docker" }),
       }),
     );
 
@@ -1992,6 +2059,7 @@ git commit -m "feat(api): 新增本機部署 API" -m "Co-authored-by: Copilot <2
 ### Task 7: GCP Terraform Core Module
 
 **Files:**
+
 - Create: `terraform/gcp/versions.tf`
 - Create: `terraform/gcp/variables.tf`
 - Create: `terraform/gcp/main.tf`
@@ -1999,6 +2067,7 @@ git commit -m "feat(api): 新增本機部署 API" -m "Co-authored-by: Copilot <2
 - Create: `terraform/gcp/README.md`
 
 **Interfaces:**
+
 - Consumes: `terraform.tfvars.json` generated by `writeTerraformVars`.
 - Produces: Terraform outputs `server_url`, `preview_url`, `server_service_name`, `preview_service_name`, `region`, `https_url`, `load_balancer_ip`, `certificate_name`.
 - Produces: Cloud Run services using Secret Manager-backed `CONTAINER_CONFIG`.
@@ -2417,6 +2486,7 @@ git commit -m "feat(terraform): 新增 GCP 核心模組" -m "Co-authored-by: Cop
 ### Task 8: Optional Custom Domain Terraform and Future Provider Docs
 
 **Files:**
+
 - Modify: `terraform/gcp/main.tf`
 - Modify: `terraform/gcp/outputs.tf`
 - Modify: `terraform/gcp/README.md`
@@ -2425,6 +2495,7 @@ git commit -m "feat(terraform): 新增 GCP 核心模組" -m "Co-authored-by: Cop
 - Create: `terraform/generic/README.md`
 
 **Interfaces:**
+
 - Consumes: `custom_domain`, `use_managed_ssl`, `enable_cloud_dns`.
 - Produces: optional serverless NEG, backend service, URL map, HTTPS proxy, global forwarding rule, global address, Certificate Manager DNS authorization, Certificate Manager certificate, optional Cloud DNS zone and A record.
 - Produces: populated `load_balancer_ip` and `certificate_name` outputs when `custom_domain` is set.
@@ -2648,6 +2719,7 @@ git commit -m "feat(terraform): 加入自訂網域資源" -m "Co-authored-by: Co
 ### Task 9: UI Components, Home Page, and Deploy Wizard
 
 **Files:**
+
 - Create: `components/ui/button.tsx`
 - Create: `components/ui/card.tsx`
 - Create: `components/ui/input.tsx`
@@ -2664,6 +2736,7 @@ git commit -m "feat(terraform): 加入自訂網域資源" -m "Co-authored-by: Co
 - Test: `tests/components/deploy-wizard.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `deploymentInputSchema`, `DeploymentInput`, `sanitizeDeploymentInputForReview`.
 - Produces: `DeployWizard` client component.
 - Produces: review summary that redacts `gtmContainerConfig`.
@@ -2694,8 +2767,8 @@ describe("DeployWizard", () => {
             startedAt: "2026-07-02T00:00:00.000Z",
             updatedAt: "2026-07-02T00:01:00.000Z",
             lastSuccessfulPlanAt: "2026-07-02T00:01:00.000Z",
-            error: null
-          }
+            error: null,
+          },
         }),
       ),
     );
@@ -2777,7 +2850,10 @@ import { cn } from "@/lib/utils";
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={cn("min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm", className)}
+      className={cn(
+        "min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm",
+        className,
+      )}
       {...props}
     />
   );
@@ -2817,7 +2893,9 @@ export function Checkbox(props: InputHTMLAttributes<HTMLInputElement>) {
 import type { SelectHTMLAttributes } from "react";
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" {...props} />;
+  return (
+    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" {...props} />
+  );
 }
 ```
 
@@ -2828,7 +2906,10 @@ import { cn } from "@/lib/utils";
 export function Badge({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
-      className={cn("inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700", className)}
+      className={cn(
+        "inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700",
+        className,
+      )}
       {...props}
     />
   );
@@ -2878,7 +2959,7 @@ import {
   deploymentInputSchema,
   sanitizeDeploymentInputForReview,
   type DeploymentInput,
-  type DeploymentReview
+  type DeploymentReview,
 } from "@/lib/schemas/deployment";
 
 const defaults: DeploymentInput = {
@@ -2896,7 +2977,7 @@ const defaults: DeploymentInput = {
   useHttps: true,
   useManagedSsl: true,
   customDomain: "",
-  enableCloudDns: false
+  enableCloudDns: false,
 };
 
 export function DeployWizard() {
@@ -2905,7 +2986,7 @@ export function DeployWizard() {
   const [message, setMessage] = useState("");
   const form = useForm<DeploymentInput>({
     resolver: zodResolver(deploymentInputSchema),
-    defaultValues: defaults
+    defaultValues: defaults,
   });
 
   async function plan(values: DeploymentInput) {
@@ -2914,7 +2995,7 @@ export function DeployWizard() {
     const response = await fetch("/api/deploy/plan", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(values)
+      body: JSON.stringify(values),
     });
     if (!response.ok) {
       setMessage("Terraform plan failed. Review the Status page for details.");
@@ -2926,7 +3007,9 @@ export function DeployWizard() {
 
   async function apply() {
     const response = await fetch("/api/deploy/apply", { method: "POST" });
-    setMessage(response.ok ? "Apply started. Open Status for live logs." : "Apply failed to start.");
+    setMessage(
+      response.ok ? "Apply started. Open Status for live logs." : "Apply failed to start.",
+    );
   }
 
   return (
@@ -2970,7 +3053,11 @@ export function DeployWizard() {
           {message ? <p className="text-sm text-slate-600">{message}</p> : null}
         </form>
       </Card>
-      {review ? <ReviewSummary review={review} /> : <Card>Complete the form to generate a review.</Card>}
+      {review ? (
+        <ReviewSummary review={review} />
+      ) : (
+        <Card>Complete the form to generate a review.</Card>
+      )}
     </div>
   );
 }
@@ -3019,6 +3106,7 @@ git commit -m "feat(ui): 新增部署精靈介面" -m "Co-authored-by: Copilot <
 ### Task 10: Status, Logs, Outputs, Destroy, and Settings UI
 
 **Files:**
+
 - Create: `components/status/terraform-console.tsx`
 - Create: `components/status/outputs-card.tsx`
 - Create: `components/status/destroy-dialog.tsx`
@@ -3030,6 +3118,7 @@ git commit -m "feat(ui): 新增部署精靈介面" -m "Co-authored-by: Copilot <
 - Test: `tests/components/settings-form.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `GET /api/status`, `GET /api/logs`, `GET /api/output`, `POST /api/destroy`, `GET /api/settings`, `POST /api/settings`.
 - Produces: status dashboard with phase, log console, outputs, and destroy confirmation.
 - Produces: settings form for local binary paths.
@@ -3056,8 +3145,8 @@ describe("StatusDashboard", () => {
         }
         return Response.json({
           outputs: {
-            server_url: { sensitive: false, type: "string", value: "https://server.run.app" }
-          }
+            server_url: { sensitive: false, type: "string", value: "https://server.run.app" },
+          },
         });
       }),
     );
@@ -3087,7 +3176,7 @@ describe("SettingsForm", () => {
       "fetch",
       vi.fn(async () =>
         Response.json({
-          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" }
+          settings: { terraformPath: "terraform", gcloudPath: "gcloud", dockerPath: "docker" },
         }),
       ),
     );
@@ -3178,7 +3267,11 @@ export function DestroyDialog({ onDestroyed }: { onDestroyed: () => void }) {
     <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
       <h2 className="font-semibold text-red-900">Destroy infrastructure</h2>
       <label className="mt-3 flex items-center gap-2 text-sm text-red-900">
-        <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(event) => setConfirmed(event.target.checked)}
+        />
         I understand this will run terraform destroy.
       </label>
       <Button className="mt-3 bg-red-600 hover:bg-red-700" disabled={!confirmed} onClick={destroy}>
@@ -3210,7 +3303,7 @@ export function StatusDashboard() {
     const [statusResponse, logsResponse, outputsResponse] = await Promise.all([
       fetch("/api/status"),
       fetch("/api/logs"),
-      fetch("/api/output")
+      fetch("/api/output"),
     ]);
     setState((await statusResponse.json()).state);
     setLogs((await logsResponse.json()).logs);
@@ -3270,7 +3363,7 @@ import type { LocalSettings } from "@/lib/schemas/settings";
 const defaults: LocalSettings = {
   terraformPath: "terraform",
   gcloudPath: "gcloud",
-  dockerPath: "docker"
+  dockerPath: "docker",
 };
 
 export function SettingsForm() {
@@ -3287,7 +3380,7 @@ export function SettingsForm() {
     const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(settings)
+      body: JSON.stringify(settings),
     });
     setMessage(response.ok ? "Settings saved." : "Settings could not be saved.");
   }
@@ -3366,10 +3459,12 @@ git commit -m "feat(ui): 新增狀態與設定頁面" -m "Co-authored-by: Copilo
 ### Task 11: README, Final Checks, and Push
 
 **Files:**
+
 - Create: `README.md`
 - Modify: `docs/superpowers/specs/2026-07-02-gtm-server-deployer-design.md` only if implementation changes require spec alignment.
 
 **Interfaces:**
+
 - Consumes: completed app, Terraform module, and provider docs.
 - Produces: user-facing README with overview, features, architecture Mermaid diagram, tech stack, requirements, installation, usage, destroy flow, screenshots section, roadmap, contributing, Apache 2.0 license, and one-click deployment button sections.
 
